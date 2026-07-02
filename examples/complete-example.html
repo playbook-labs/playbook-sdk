@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Playbook SDK - Complete Example</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Oxygen, Ubuntu, Cantarell, sans-serif;
+      }
+    </style>
+  </head>
+  <body class="bg-gray-50">
+    <!-- Header -->
+    <header class="bg-white shadow-sm">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <h1 class="text-3xl font-bold text-gray-900">My Asset Library</h1>
+            <p class="mt-1 text-sm text-gray-500">
+              Browse and search through our collection
+            </p>
+          </div>
+          <div class="flex gap-2">
+            <button
+              id="refresh-btn"
+              class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition"
+            >
+              Refresh
+            </button>
+            <button
+              id="destroy-btn"
+              class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition"
+            >
+              Destroy
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <!-- SDK Container -->
+      <div id="my-gallery"></div>
+
+      <!-- Stats Section -->
+      <div class="mt-8 bg-white rounded-lg shadow p-6">
+        <h2 class="text-xl font-semibold mb-4">Gallery Stats</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="bg-blue-50 p-4 rounded-lg">
+            <div class="text-sm text-blue-600 font-medium">Total Assets</div>
+            <div id="total-assets" class="text-2xl font-bold text-blue-900">
+              -
+            </div>
+          </div>
+          <div class="bg-green-50 p-4 rounded-lg">
+            <div class="text-sm text-green-600 font-medium">Last Search</div>
+            <div id="last-search" class="text-2xl font-bold text-green-900">
+              None
+            </div>
+          </div>
+          <div class="bg-purple-50 p-4 rounded-lg">
+            <div class="text-sm text-purple-600 font-medium">Current Board</div>
+            <div id="current-board" class="text-2xl font-bold text-purple-900">
+              All Assets
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Event Log -->
+      <div class="mt-8 bg-white rounded-lg shadow p-6">
+        <h2 class="text-xl font-semibold mb-4">Event Log</h2>
+        <div
+          id="event-log"
+          class="bg-gray-50 rounded p-4 h-64 overflow-y-auto font-mono text-sm"
+        >
+          <div class="text-gray-400">Events will appear here...</div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="mt-16 bg-white border-t border-gray-200">
+      <div
+        class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 text-center text-gray-500 text-sm"
+      >
+        Powered by Playbook Gallery SDK
+      </div>
+    </footer>
+
+    <script src="../dist/playbook-sdk.min.js"></script>
+
+    <script>
+      // ============================================
+      // CONFIGURATION - Replace with your values
+      // ============================================
+      const CONFIG = {
+        organizationSlug: "playbook-sdk", // Replace with your organization slug
+        authToken: "access_token", // Replace with your auth token
+        boardId: "board_id", // Optional: Replace with your board/collection ID
+      };
+
+      function logEvent(message, type = "info") {
+        const log = document.getElementById("event-log");
+        const timestamp = new Date().toLocaleTimeString();
+        const colors = {
+          info: "text-blue-600",
+          success: "text-green-600",
+          warning: "text-yellow-600",
+          error: "text-red-600",
+        };
+
+        const entry = document.createElement("div");
+        entry.className = colors[type];
+        entry.textContent = `[${timestamp}] ${message}`;
+
+        if (log.firstChild.textContent === "Events will appear here...") {
+          log.innerHTML = "";
+        }
+
+        log.appendChild(entry);
+        log.scrollTop = log.scrollHeight;
+      }
+
+      let gallery;
+
+      try {
+        logEvent("Initializing Playbook SDK...", "info");
+
+        gallery = PlaybookSDK.init({
+          containerId: "my-gallery",
+          organizationSlug: CONFIG.organizationSlug,
+          authToken: CONFIG.authToken,
+          boardId: CONFIG.boardId, // Set root board - only shows this board and its children
+
+          // Features
+          enableSearch: true,
+          enableBoards: true,
+          enableModal: true,
+          enableDownload: true,
+          enableInfo: true,
+
+          // Column configuration
+          columnBreakpoints: {
+            default: 2,
+            768: 3,
+            1024: 4,
+            1280: 5,
+            1536: 6,
+          },
+
+          // Callbacks
+          onAssetClick: function (asset) {
+            logEvent(`Asset clicked: ${asset.title || asset.name}`, "info");
+          },
+
+          onSearch: function (query) {
+            logEvent(`Search performed: "${query}"`, "success");
+            document.getElementById("last-search").textContent =
+              query || "None";
+          },
+
+          onBoardChange: function (boardId, boardTitle) {
+            const displayName =
+              boardTitle || (boardId === "all" ? "All Assets" : boardId);
+            logEvent(`Board changed: ${displayName}`, "success");
+            document.getElementById("current-board").textContent = displayName;
+          },
+
+          onModalOpen: function (asset) {
+            logEvent(`Modal opened: ${asset.title || asset.name}`, "info");
+          },
+
+          onModalClose: function () {
+            logEvent("Modal closed", "info");
+          },
+
+          onDownload: function (asset) {
+            logEvent(
+              `Download initiated: ${asset.title || asset.name}`,
+              "warning"
+            );
+          },
+        });
+
+        logEvent("SDK initialized successfully!", "success");
+
+        // Update asset count whenever assets change
+        const updateAssetCount = () => {
+          const assets = gallery.getAssets();
+          document.getElementById("total-assets").textContent = assets.length;
+        };
+
+        // Initial count (wait for first load)
+        setTimeout(updateAssetCount, 1500);
+
+        // Update on board change (callback now fires after assets are loaded)
+        const originalOnBoardChange = gallery.config.onBoardChange;
+        gallery.config.onBoardChange = function (boardId, boardTitle) {
+          if (originalOnBoardChange) {
+            originalOnBoardChange(boardId, boardTitle);
+          }
+          updateAssetCount(); // No setTimeout needed - assets are already loaded
+        };
+
+        // Update on search (callback fires after search completes)
+        const originalOnSearch = gallery.config.onSearch;
+        gallery.config.onSearch = function (query) {
+          if (originalOnSearch) {
+            originalOnSearch(query);
+          }
+          updateAssetCount(); // No setTimeout needed - results are already loaded
+        };
+      } catch (error) {
+        logEvent(`Error: ${error.message}`, "error");
+        console.error("Failed to initialize SDK:", error);
+      }
+
+      document
+        .getElementById("refresh-btn")
+        .addEventListener("click", function () {
+          if (gallery) {
+            gallery.refresh();
+            logEvent("Gallery refreshed", "success");
+          }
+        });
+
+      document
+        .getElementById("destroy-btn")
+        .addEventListener("click", function () {
+          if (gallery) {
+            PlaybookSDK.destroy("my-gallery");
+            gallery = null;
+            logEvent("Gallery destroyed", "warning");
+            document.getElementById("total-assets").textContent = "-";
+            document.getElementById("last-search").textContent = "None";
+            document.getElementById("current-board").textContent = "-";
+
+            setTimeout(() => {
+              location.reload();
+            }, 2000);
+          }
+        });
+
+      console.log(
+        "%c🎨 Playbook SDK Demo",
+        "font-size: 20px; font-weight: bold; color: #3b82f6;"
+      );
+      console.log(
+        "%cKeyboard shortcuts when modal is open:",
+        "font-size: 14px; font-weight: bold;"
+      );
+      console.log("  ← Previous asset");
+      console.log("  → Next asset");
+      console.log("  Esc Close modal");
+    </script>
+  </body>
+</html>

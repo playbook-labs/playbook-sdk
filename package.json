@@ -1,0 +1,64 @@
+{
+  "name": "playbook-sdk",
+  "version": "1.0.4",
+  "description": "A lightweight, zero-dependency frontend SDK for embedding beautiful, searchable media galleries backed by the Playbook API",
+  "main": "dist/playbook-sdk.min.js",
+  "module": "dist/playbook-sdk.min.js",
+  "browser": "dist/playbook-sdk.min.js",
+  "unpkg": "dist/playbook-sdk.min.js",
+  "jsdelivr": "dist/playbook-sdk.min.js",
+  "types": "index.d.ts",
+  "typings": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./dist/playbook-sdk.min.js"
+    }
+  },
+  "files": [
+    "dist",
+    "index.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/playbook-labs/playbook-sdk.git"
+  },
+  "homepage": "https://github.com/playbook-labs/playbook-sdk#readme",
+  "bugs": {
+    "url": "https://github.com/playbook-labs/playbook-sdk/issues"
+  },
+  "keywords": [
+    "gallery",
+    "masonry",
+    "grid",
+    "assets",
+    "images",
+    "sdk",
+    "component",
+    "frontend",
+    "ui",
+    "responsive",
+    "modal",
+    "lightbox",
+    "media-library",
+    "typescript",
+    "react",
+    "vue",
+    "angular"
+  ],
+  "author": "Playbook Labs <support@playbook.com>",
+  "license": "MIT",
+  "engines": {
+    "node": ">=12.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.2"
+  }
+}

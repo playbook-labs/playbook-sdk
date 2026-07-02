@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Playbook SDK - Minimal Example</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-gray-100 p-8">
+    <div class="max-w-6xl mx-auto">
+      <h1 class="text-3xl font-bold mb-8 text-center">My Gallery</h1>
+
+      <!-- This is all you need! -->
+      <div id="gallery"></div>
+    </div>
+
+    <!-- Include SDK -->
+    <script src="../dist/playbook-sdk.min.js"></script>
+
+    <script>
+      // ============================================
+      // CONFIGURATION - Replace with your values
+      // ============================================
+      const CONFIG = {
+        organizationSlug: "playbook-sdk", // Replace with your organization slug
+        authToken: "access_token", // Replace with your auth token
+        boardId: "board_id", // Optional: Replace with your board/collection ID
+      };
+
+      // Initialize with minimal configuration
+      PlaybookSDK.init({
+        containerId: "gallery",
+        organizationSlug: CONFIG.organizationSlug,
+        authToken: CONFIG.authToken,
+        boardId: CONFIG.boardId,
+
+        enableSearch: true,
+        enableBoards: true,
+        enableModal: true,
+        enableDownload: false,
+        enableInfo: false,
+      });
+    </script>
+  </body>
+</html>

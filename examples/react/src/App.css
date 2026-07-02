@@ -1,0 +1,293 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(147, 51, 234, 0.5);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(147, 51, 234, 0.7);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.gradient-text {
+  background: linear-gradient(to right, #a855f7, #ec4899);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+[class*="bg-black/40"] {
+  animation: fadeIn 0.5s ease-out;
+}
+
+button {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+.loading {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+#playbook-gallery {
+  min-height: 400px;
+}
+
+.event-log-entry {
+  transition: all 0.2s ease;
+}
+
+.event-log-entry:hover {
+  transform: translateX(4px);
+}
+
+@media (max-width: 768px) {
+  #playbook-gallery {
+    min-height: 300px;
+  }
+}
+
+.glass {
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid #a855f7;
+  outline-offset: 2px;
+}
+
+.pb-pagination-container {
+  display: none !important;
+}
+
+.pb-search-wrapper {
+  margin-bottom: 1.5rem !important;
+}
+
+.pb-search-container {
+  background: rgba(0, 0, 0, 0.4) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(147, 51, 234, 0.2) !important;
+  border-radius: 0.75rem !important;
+  padding: 1.25rem !important;
+  gap: 1rem !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3),
+    0 2px 4px -1px rgba(0, 0, 0, 0.2) !important;
+}
+
+.pb-search-input {
+  background: rgba(0, 0, 0, 0.5) !important;
+  border: 1.5px solid rgba(147, 51, 234, 0.4) !important;
+  border-radius: 0.5rem !important;
+  color: #ffffff !important;
+  padding: 0.875rem 3rem !important;
+  font-size: 0.9375rem !important;
+  font-weight: 400 !important;
+  transition: all 0.3s ease !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+}
+
+.pb-search-input::placeholder {
+  color: rgba(167, 139, 250, 0.6) !important;
+  font-weight: 300 !important;
+}
+
+.pb-search-input:hover {
+  border-color: rgba(147, 51, 234, 0.5) !important;
+}
+
+.pb-search-input:focus {
+  outline: none !important;
+  border-color: rgba(147, 51, 234, 0.8) !important;
+  background: rgba(0, 0, 0, 0.6) !important;
+  box-shadow: 0 0 0 3px rgba(147, 51, 234, 0.15),
+    inset 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+}
+
+.pb-search-icon {
+  color: rgba(167, 139, 250, 0.7) !important;
+}
+
+.pb-clear-search {
+  color: rgba(167, 139, 250, 0.7) !important;
+  transition: all 0.2s ease !important;
+}
+
+.pb-clear-search:hover {
+  color: rgba(236, 72, 153, 0.9) !important;
+}
+
+.pb-ai-search-toggle {
+  accent-color: #a855f7 !important;
+  cursor: pointer !important;
+  width: 1.125rem !important;
+  height: 1.125rem !important;
+}
+
+.pb-search-container label {
+  color: rgba(167, 139, 250, 0.9) !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+  transition: all 0.2s ease !important;
+  padding: 0.375rem 0.75rem !important;
+  border-radius: 0.375rem !important;
+}
+
+.pb-search-container label:hover {
+  color: rgba(167, 139, 250, 1) !important;
+  background: rgba(147, 51, 234, 0.1) !important;
+}
+
+.pb-search-btn {
+  background: linear-gradient(135deg, #9333ea, #ec4899) !important;
+  border: none !important;
+  border-radius: 0.5rem !important;
+  color: white !important;
+  padding: 0.875rem 2rem !important;
+  font-size: 0.9375rem !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.3s ease !important;
+  box-shadow: 0 4px 12px rgba(147, 51, 234, 0.4), 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+  letter-spacing: 0.025em !important;
+}
+
+.pb-search-btn:hover {
+  background: linear-gradient(135deg, #7c3aed, #db2777) !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 16px rgba(147, 51, 234, 0.5), 0 4px 8px rgba(0, 0, 0, 0.3) !important;
+}
+
+.pb-search-btn:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 2px 6px rgba(147, 51, 234, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Responsive Search Bar */
+@media (max-width: 768px) {
+  .pb-search-container {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .pb-search-container label {
+    justify-content: flex-start !important;
+  }
+}
+
+.pb-boards-container {
+  margin-bottom: 1.5rem !important;
+}
+
+.pb-boards {
+  display: flex !important;
+  gap: 0.5rem !important;
+  flex-wrap: wrap !important;
+  padding: 0.75rem !important;
+  background: rgba(0, 0, 0, 0.4) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(147, 51, 234, 0.2) !important;
+  border-radius: 0.75rem !important;
+}
+
+.pb-board-btn {
+  padding: 0.5rem 1rem !important;
+  background: rgba(0, 0, 0, 0.3) !important;
+  border: 1px solid rgba(147, 51, 234, 0.3) !important;
+  border-radius: 0.5rem !important;
+  color: rgba(167, 139, 250, 0.8) !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.pb-board-btn:hover {
+  background: rgba(147, 51, 234, 0.2) !important;
+  border-color: rgba(147, 51, 234, 0.5) !important;
+  color: rgba(167, 139, 250, 1) !important;
+}
+
+.pb-board-btn.active {
+  background: linear-gradient(
+    to right,
+    rgba(147, 51, 234, 0.3),
+    rgba(236, 72, 153, 0.3)
+  ) !important;
+  border-color: rgba(147, 51, 234, 0.6) !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+}
+
+/* Professional Masonry Grid Items */
+.pb-masonry-item {
+  transition: all 0.3s ease !important;
+  border-radius: 0.75rem !important;
+  overflow: hidden !important;
+  background: rgba(0, 0, 0, 0.2) !important;
+  border: 1px solid rgba(147, 51, 234, 0.1) !important;
+}
+
+.pb-masonry-item:hover {
+  transform: translateY(-4px) !important;
+  box-shadow: 0 8px 16px rgba(147, 51, 234, 0.3) !important;
+  border-color: rgba(147, 51, 234, 0.3) !important;
+}
+
+.pb-masonry-item img {
+  transition: transform 0.3s ease !important;
+}
+
+.pb-masonry-item:hover img {
+  transform: scale(1.05) !important;
+}
