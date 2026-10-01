@@ -66,6 +66,8 @@
       };
 
       const settings = { ...defaultConfig, ...config };
+      // labels is nested: deep-merge so a partial override keeps the defaults.
+      settings.labels = { ...defaultConfig.labels, ...(config && config.labels) };
 
       if (typeof settings.getUploadTarget !== "function") {
         console.error(
