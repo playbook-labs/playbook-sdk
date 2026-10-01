@@ -45,6 +45,7 @@
         // Optional. async (finalize, file) => asset. Called after the bytes land
         // so your backend can call Playbook's finish_upload and return the asset.
         finishUpload: null,
+        variant: "dropzone", // "dropzone" (full drag area) | "button" (compact)
         accept: "image/*,video/*",
         maxFileSizeBytes: 104857600, // 100 MB (the create_upload_url ceiling)
         maxFiles: 0, // 0 = unlimited
@@ -54,6 +55,7 @@
         labels: {
           prompt: "Drag files here or click to upload",
           hint: "Images and video",
+          button: "Upload files",
         },
         // Hooks
         onSelect: null, // (files: File[]) => void
@@ -116,6 +118,13 @@
         .pb-uploader-dropzone--dragover {
           border-color: #ff2753; background: rgba(255,39,83,0.05);
         }
+        .pb-uploader-button {
+          display: inline-flex; align-items: center; gap: 8px;
+          padding: 10px 18px; border: 1px solid rgba(0,0,0,0.14);
+          border-radius: 10px; background: #16181c; color: #fff;
+          font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+        }
+        .pb-uploader-button:hover { background: #000; }
         .pb-uploader-prompt { font-size: 15px; font-weight: 600; }
         .pb-uploader-hint { font-size: 12.5px; color: #8b93a1; }
         .pb-uploader-list { list-style: none; margin: 12px 0 0; padding: 0;
@@ -161,6 +170,45 @@
       this.container.classList.add("pb-uploader");
       this.container.innerHTML = "";
 
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = this.config.accept;
+      input.multiple = this.config.multiple;
+      input.style.display = "none";
+
+      const list = document.createElement("ul");
+      list.className = "pb-uploader-list";
+
+      const trigger =
+        this.config.variant === "button"
+          ? this._renderButton()
+          : this._renderDropzone();
+
+      this.container.appendChild(trigger);
+      this.container.appendChild(input);
+      this.container.appendChild(list);
+      this.trigger = trigger;
+      this.input = input;
+      this.list = list;
+
+      this._on(input, "change", () => {
+        this._addFiles(input.files);
+        input.value = "";
+      });
+    }
+
+    // Compact trigger: a button, no drag area.
+    _renderButton() {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "pb-uploader-button";
+      btn.textContent = this.config.labels.button;
+      this._on(btn, "click", () => this.input.click());
+      return btn;
+    }
+
+    // Full drag-and-drop area.
+    _renderDropzone() {
       const dropzone = document.createElement("div");
       dropzone.className = "pb-uploader-dropzone";
       dropzone.setAttribute("role", "button");
@@ -175,32 +223,12 @@
       dropzone.appendChild(prompt);
       dropzone.appendChild(hint);
 
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = this.config.accept;
-      input.multiple = this.config.multiple;
-      input.style.display = "none";
-
-      const list = document.createElement("ul");
-      list.className = "pb-uploader-list";
-
-      this.container.appendChild(dropzone);
-      this.container.appendChild(input);
-      this.container.appendChild(list);
-      this.dropzone = dropzone;
-      this.input = input;
-      this.list = list;
-
-      this._on(dropzone, "click", () => input.click());
+      this._on(dropzone, "click", () => this.input.click());
       this._on(dropzone, "keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          input.click();
+          this.input.click();
         }
-      });
-      this._on(input, "change", () => {
-        this._addFiles(input.files);
-        input.value = "";
       });
       ["dragenter", "dragover"].forEach((evt) =>
         this._on(dropzone, evt, (e) => {
@@ -219,6 +247,7 @@
           this._addFiles(e.dataTransfer.files);
         }
       });
+      return dropzone;
     }
 
     _addFiles(fileList) {

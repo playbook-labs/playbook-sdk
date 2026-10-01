@@ -367,6 +367,8 @@ declare module "playbook-sdk/uploader" {
      * finish_upload and return the created asset.
      */
     finishUpload?: (finalize: any, file: File) => Promise<Asset>;
+    /** "dropzone" (full drag area, default) or "button" (compact trigger). */
+    variant?: "dropzone" | "button";
     /** Accepted MIME types for the file input (default "image/*,video/*"). */
     accept?: string;
     /** Max file size in bytes (default 104857600 — the create_upload_url ceiling). */
@@ -377,8 +379,8 @@ declare module "playbook-sdk/uploader" {
     multiple?: boolean;
     /** Begin uploading as soon as files are selected (default true). */
     autoUpload?: boolean;
-    /** Dropzone copy. */
-    labels?: { prompt?: string; hint?: string };
+    /** Dropzone/button copy. */
+    labels?: { prompt?: string; hint?: string; button?: string };
     onSelect?: (files: File[]) => void;
     onProgress?: (file: File, pct: number) => void;
     onFileComplete?: (asset: Asset | null, file: File) => void;
@@ -406,6 +408,40 @@ declare module "playbook-sdk/uploader" {
   export default PlaybookUploader;
 }
 
+declare module "playbook-sdk/viewer" {
+  /** A single viewable asset. */
+  export interface ViewerItem {
+    /** Full-size URL of the image or video. */
+    src: string;
+    /** MIME type; a value starting with "video" renders a <video>. */
+    type?: string;
+    /** Optional caption. */
+    title?: string;
+  }
+
+  export interface ViewerOpenOptions extends Partial<ViewerItem> {
+    /** A navigable set; takes precedence over a single src/type/title. */
+    items?: ViewerItem[];
+    /** Starting index into `items` (default 0). */
+    index?: number;
+  }
+
+  export interface PlaybookViewerInterface {
+    version: string;
+    /** Open the lightbox for one asset or a navigable set. */
+    open(options: ViewerOpenOptions): void;
+    /** Close the lightbox. */
+    close(): void;
+    /** Advance to the next item in a set. */
+    next(): void;
+    /** Go to the previous item in a set. */
+    prev(): void;
+  }
+
+  const PlaybookViewer: PlaybookViewerInterface;
+  export default PlaybookViewer;
+}
+
 /**
  * Global type declaration for browser script tag usage
  */
@@ -413,5 +449,6 @@ declare global {
   interface Window {
     PlaybookSDK: import("playbook-sdk").PlaybookSDKInterface;
     PlaybookUploader: import("playbook-sdk/uploader").PlaybookUploaderInterface;
+    PlaybookViewer: import("playbook-sdk/viewer").PlaybookViewerInterface;
   }
 }

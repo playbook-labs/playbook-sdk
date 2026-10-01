@@ -15,6 +15,7 @@ const bannerFor = (name) => ({
 const bundles = [
   { src: "src/playbook-sdk.js", out: "dist/playbook-sdk", name: "Playbook Gallery SDK" },
   { src: "src/playbook-uploader.js", out: "dist/playbook-uploader", name: "Playbook Uploader SDK" },
+  { src: "src/playbook-viewer.js", out: "dist/playbook-viewer", name: "Playbook Viewer SDK" },
 ];
 
 for (const { src, out, name } of bundles) {
