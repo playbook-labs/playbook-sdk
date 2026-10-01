@@ -9,7 +9,7 @@
   PlaybookSDK.init({
     containerId: "gallery",
     organizationSlug: "your-org-slug",
-    authToken: "your-token-here",
+    getAccessToken: async () => "<short-lived access token>", // mint on your backend
   });
 </script>
 ```
@@ -34,7 +34,7 @@ PlaybookSDK.init({
   // Required
   containerId: "my-gallery",
   organizationSlug: "your-org-slug",
-  authToken: "your-token-here",
+  getAccessToken: async () => "<short-lived access token>", // mint on your backend
 
   // Optional: Root board (limits gallery to this board + children only)
   boardId: "",
@@ -186,7 +186,7 @@ function Gallery() {
     const g = PlaybookSDK.init({
       containerId: "gallery",
       organizationSlug: "your-org-slug",
-      authToken: "your-token-here",
+      getAccessToken: async () => "<short-lived access token>", // mint on your backend
     });
     return () => PlaybookSDK.destroy("gallery");
   }, []);

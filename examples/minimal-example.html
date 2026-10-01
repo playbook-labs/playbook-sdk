@@ -23,7 +23,7 @@
       // ============================================
       const CONFIG = {
         organizationSlug: "playbook-sdk", // Replace with your organization slug
-        authToken: "access_token", // Replace with your auth token
+        getAccessToken: async () => "<short-lived access token>", // mint on your backend
         boardId: "board_id", // Optional: Replace with your board/collection ID
       };
 
@@ -31,7 +31,7 @@
       PlaybookSDK.init({
         containerId: "gallery",
         organizationSlug: CONFIG.organizationSlug,
-        authToken: CONFIG.authToken,
+        getAccessToken: CONFIG.getAccessToken,
         boardId: CONFIG.boardId,
 
         enableSearch: true,

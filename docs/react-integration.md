@@ -26,7 +26,7 @@ function Gallery() {
       sdkInstance.current = PlaybookSDK.init({
         containerId: "react-gallery",
         organizationSlug: "your-org-slug",
-        authToken: "your-auth-token",
+        getAccessToken: async () => "<short-lived access token>", // mint on your backend
 
         onAssetClick: (asset) => {
           console.log("Asset clicked:", asset);
@@ -73,7 +73,7 @@ function ControlledGallery({ organizationSlug, onAssetSelect }) {
       sdkInstance.current = PlaybookSDK.init({
         containerId: "controlled-gallery",
         organizationSlug: organizationSlug,
-        authToken: "your-auth-token",
+        getAccessToken: async () => "<short-lived access token>", // mint on your backend
 
         onAssetClick: (asset) => {
           setCurrentAsset(asset);
@@ -178,7 +178,9 @@ declare module "playbook-sdk" {
   export interface Config {
     containerId: string;
     organizationSlug: string;
-    authToken: string;
+    getAccessToken?: () => string | Promise<string>;
+    /** @deprecated Use `getAccessToken` to return a short-lived, backend-minted token instead. */
+    authToken?: string;
     boardId?: string;
     enableSearch?: boolean;
     enableBoards?: boolean;
@@ -226,7 +228,7 @@ const Gallery: React.FC = () => {
     sdkInstance.current = PlaybookSDK.init({
       containerId: "ts-gallery",
       organizationSlug: "your-org-slug",
-      authToken: "your-auth-token",
+      getAccessToken: async () => "<short-lived access token>", // mint on your backend
 
       onAssetClick: (asset: Asset) => {
         console.log("Clicked:", asset.title);

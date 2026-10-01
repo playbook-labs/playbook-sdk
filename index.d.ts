@@ -117,11 +117,22 @@ declare module "playbook-sdk" {
     organizationSlug: string;
 
     /**
-     * Authentication token for API requests
-     * Will be sent as "Authorization: Bearer {token}" header
-     * @required
+     * Returns a short-lived access token for API requests. Called before the
+     * first request and again after a 401; the SDK caches the result in memory
+     * only and never persists it. Have your backend mint a short-lived,
+     * board-scoped token rather than shipping a long-lived one to the browser.
+     *
+     * Required unless the deprecated `authToken` is provided.
      */
-    authToken: string;
+    getAccessToken?: () => string | Promise<string>;
+
+    /**
+     * Static authentication token, sent as "Authorization: Bearer {token}".
+     * @deprecated A long-lived token in client code is extractable from page
+     * source. Use `getAccessToken` instead; this is wrapped as a provider with
+     * a console warning and will be removed in a future version.
+     */
+    authToken?: string;
 
     /**
      * Optional board ID to scope the gallery to a specific board

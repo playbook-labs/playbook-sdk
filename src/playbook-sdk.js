@@ -21,6 +21,10 @@
     init: function (config) {
       const defaultConfig = {
         containerId: "__playbook-embed",
+        // Preferred: async () => "<short-lived token>", called on first request
+        // and again on 401. The SDK never stores a long-lived token.
+        getAccessToken: null,
+        // Deprecated: a static token in client code (extractable from source).
         authToken: "",
         organizationSlug: "",
         boardId: "",
@@ -57,8 +61,23 @@
         return null;
       }
 
-      if (!settings.authToken) {
-        console.error("Playbook SDK: authToken is required");
+      // Back-compat: wrap a static authToken as a provider, with a warning.
+      // A long-lived token in client code is extractable from page source;
+      // getAccessToken returns a short-lived token from your backend instead.
+      if (!settings.getAccessToken && settings.authToken) {
+        console.warn(
+          "Playbook SDK: `authToken` is deprecated and will be removed in a " +
+            "future version. Provide `getAccessToken: async () => token` instead."
+        );
+        const staticToken = settings.authToken;
+        settings.getAccessToken = () => staticToken;
+      }
+
+      if (typeof settings.getAccessToken !== "function") {
+        console.error(
+          "Playbook SDK: `getAccessToken` is required (an async function that " +
+            "returns a short-lived access token)."
+        );
         return null;
       }
 
@@ -418,8 +437,49 @@
       this.eventListeners = [];
       this.abortController = null;
       this.hasMoreAssets = false;
+      this._accessToken = null; // cached in memory only, never persisted
+      this._tokenPromise = null; // dedupes concurrent token resolution
 
       this.init();
+    }
+
+    // Resolve a short-lived access token from the configured provider, caching
+    // it in memory. forceRefresh drops the cache (used after a 401).
+    _resolveToken(forceRefresh) {
+      if (forceRefresh) this._accessToken = null;
+      if (this._accessToken) return Promise.resolve(this._accessToken);
+      if (!this._tokenPromise) {
+        this._tokenPromise = Promise.resolve(
+          typeof this.config.getAccessToken === "function"
+            ? this.config.getAccessToken()
+            : null
+        ).then(
+          (token) => {
+            this._accessToken = token;
+            this._tokenPromise = null;
+            return token;
+          },
+          (err) => {
+            this._tokenPromise = null;
+            throw err;
+          }
+        );
+      }
+      return this._tokenPromise;
+    }
+
+    // Single fetch entry point: injects the bearer token and, on a 401,
+    // refreshes the token once and retries (tokens are short-lived).
+    async _authedFetch(url, opts = {}) {
+      const send = async (forceRefresh) => {
+        const token = await this._resolveToken(forceRefresh);
+        const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        return fetch(url, { ...opts, headers });
+      };
+      const response = await send(false);
+      if (response.status === 401) return send(true);
+      return response;
     }
 
     init() {
@@ -650,15 +710,7 @@
     async fetchInitialBoardInfo(boardId) {
       try {
         const url = `${this.config.apiBaseUrl}/boards/${boardId}`;
-        const headers = {
-          "Content-Type": "application/json",
-        };
-
-        if (this.config.authToken) {
-          headers["Authorization"] = `Bearer ${this.config.authToken}`;
-        }
-
-        const response = await fetch(url, { headers });
+        const response = await this._authedFetch(url);
 
         if (!response.ok) {
           throw new Error(`Failed to fetch board info: ${response.statusText}`);
@@ -694,19 +746,11 @@
           url = `${this.config.apiBaseUrl}/boards`;
         }
 
-        const headers = {
-          "Content-Type": "application/json",
-        };
-
-        if (this.config.authToken) {
-          headers["Authorization"] = `Bearer ${this.config.authToken}`;
-        }
-
-        const response = await fetch(url, { headers });
+        const response = await this._authedFetch(url);
 
         if (!response.ok) {
           if (response.status === 401 || response.status === 403) {
-            throw new Error(`Authentication failed. Check your authToken.`);
+            throw new Error(`Authentication failed. Check your access token.`);
           }
           if (response.status === 404) {
             throw new Error(`Organization not found. Check your organizationSlug.`);
@@ -794,18 +838,13 @@
             ? `${this.config.apiBaseUrl}/boards/${boardId}/assets?${params}`
             : `${this.config.apiBaseUrl}/assets?${params}`;
 
-        const headers = { "Content-Type": "application/json" };
-        if (this.config.authToken)
-          headers["Authorization"] = `Bearer ${this.config.authToken}`;
-
-        const response = await fetch(url, {
-          headers,
+        const response = await this._authedFetch(url, {
           signal: this.abortController.signal,
         });
 
         if (!response.ok) {
           if (response.status === 401 || response.status === 403) {
-            throw new Error(`Authentication failed. Check your authToken.`);
+            throw new Error(`Authentication failed. Check your access token.`);
           }
           if (response.status === 404) {
             throw new Error(`Organization not found. Check your organizationSlug.`);
@@ -994,12 +1033,7 @@
         }
 
         const url = `${this.config.apiBaseUrl}/${searchEndpoint}?${params}`;
-        const headers = { "Content-Type": "application/json" };
-        if (this.config.authToken)
-          headers["Authorization"] = `Bearer ${this.config.authToken}`;
-
-        const response = await fetch(url, {
-          headers,
+        const response = await this._authedFetch(url, {
           signal: this.abortController.signal,
         });
         if (!response.ok)
@@ -1086,15 +1120,7 @@
     ) {
       try {
         const url = `${this.config.apiBaseUrl}/boards/${boardId}/children`;
-        const headers = {
-          "Content-Type": "application/json",
-        };
-
-        if (this.config.authToken) {
-          headers["Authorization"] = `Bearer ${this.config.authToken}`;
-        }
-
-        const response = await fetch(url, { headers });
+        const response = await this._authedFetch(url);
         if (!response.ok) return;
 
         const data = await response.json();

@@ -81,7 +81,7 @@ Add this JavaScript code:
 const gallery = PlaybookSDK.init({
   containerId: "my-gallery",
   organizationSlug: "your-org-slug",
-  authToken: "your-auth-token",
+  getAccessToken: async () => "<short-lived access token>", // mint on your backend
 });
 ```
 
@@ -169,7 +169,7 @@ Here's a full working example:
       const gallery = PlaybookSDK.init({
         containerId: "gallery",
         organizationSlug: "your-org-slug",
-        authToken: "your-auth-token",
+        getAccessToken: async () => "<short-lived access token>", // mint on your backend
 
         // Optional: Add callbacks
         onAssetClick: function (asset) {
@@ -240,7 +240,7 @@ window.fetch = function (url) {
 PlaybookSDK.init({
   containerId: "gallery",
   organizationSlug: "test-org",
-  authToken: "test-token",
+  getAccessToken: async () => "<short-lived access token>", // mint on your backend
 });
 ```
 
@@ -252,7 +252,7 @@ PlaybookSDK.init({
 PlaybookSDK.init({
   containerId: "gallery",
   organizationSlug: "your-org-slug",
-  authToken: "your-auth-token",
+  getAccessToken: async () => "<short-lived access token>", // mint on your backend
 
   // Disable features you don't need
   enableSearch: true,
@@ -351,7 +351,7 @@ onAssetClick: function(asset) {
 PlaybookSDK.init({
   containerId: "gallery",
   organizationSlug: "your-org-slug",
-  authToken: "your-auth-token",
+  getAccessToken: async () => "<short-lived access token>", // mint on your backend
 
   onSearch: function (query) {
     // Track searches

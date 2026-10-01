@@ -49,7 +49,7 @@ A lightweight frontend SDK for creating masonry grid galleries with search, boar
       const gallery = PlaybookSDK.init({
         containerId: "my-gallery",
         organizationSlug: "your-org-slug",
-        authToken: "your-auth-token",
+        getAccessToken: async () => "<short-lived access token>", // mint on your backend
       });
     </script>
   </body>
@@ -68,7 +68,7 @@ import PlaybookSDK from "playbook-sdk";
 const gallery = PlaybookSDK.init({
   containerId: "my-gallery",
   organizationSlug: "your-org-slug",
-  authToken: "your-auth-token",
+  getAccessToken: async () => "<short-lived access token>", // mint on your backend
 });
 ```
 
@@ -87,7 +87,7 @@ Download `playbook-sdk.min.js` and include it in your project:
 API token management is available in the Playbook app — open **Developer → SDK** at [playbook.com](https://www.playbook.com/sign-up?navigateTo=sdk) to create and manage your own tokens (no approval step required). You'll need:
 
 - **Organization Slug** (e.g., `playbook-sdk`)
-- **Auth Token** — an API token, sent as a `Bearer` token in the `Authorization` header
+- **Access Token** — a short-lived token, sent as a `Bearer` token in the `Authorization` header. A long-lived token must never ship in client code; `getAccessToken` should return a short-lived, backend-minted token.
 - **Board ID** (optional - to scope gallery to specific board)
 
 ### 2. Create HTML Container
@@ -102,7 +102,7 @@ API token management is available in the Playbook app — open **Developer → S
 const gallery = PlaybookSDK.init({
   containerId: "gallery-container",
   organizationSlug: "playbook-sdk", // Your organization/workspace slug
-  authToken: "your-token-here", // Your API access token
+  getAccessToken: async () => "<short-lived access token>", // mint on your backend
   boardId: "", // Optional: Scope gallery to specific board
   enableSearch: true,
   enableBoards: true,
@@ -121,7 +121,7 @@ PlaybookSDK.init({
   // ===== Required =====
   containerId: "my-gallery", // ID of the container element
   organizationSlug: "your-org-slug", // Your Playbook workspace slug
-  authToken: "your-auth-token", // Your API bearer token
+  getAccessToken: async () => "<short-lived access token>", // mint on your backend
 
   // ===== Optional Scoping =====
   boardId: "", // Scope to specific board (empty = workspace-wide)
@@ -187,7 +187,7 @@ PlaybookSDK.init({
 PlaybookSDK.init({
   containerId: "gallery",
   organizationSlug: "acme-corp",
-  authToken: "abc123...",
+  getAccessToken: async () => "<short-lived access token>", // mint on your backend
   boardId: "", // Empty = show all workspace assets
 });
 ```
@@ -198,7 +198,7 @@ PlaybookSDK.init({
 PlaybookSDK.init({
   containerId: "gallery",
   organizationSlug: "acme-corp",
-  authToken: "abc123...",
+  getAccessToken: async () => "<short-lived access token>", // mint on your backend
   boardId: "SddGjNcAFZThZb3yVTSvbGbe", // Only this board + children
 });
 ```
@@ -225,7 +225,7 @@ PlaybookSDK.init({
       PlaybookSDK.init({
         containerId: "gallery",
         organizationSlug: "my-company",
-        authToken: "your-token-here",
+        getAccessToken: async () => "<short-lived access token>", // mint on your backend
       });
     </script>
   </body>
@@ -238,7 +238,7 @@ PlaybookSDK.init({
 const gallery = PlaybookSDK.init({
   containerId: "gallery",
   organizationSlug: "my-company",
-  authToken: "your-token",
+  getAccessToken: async () => "<short-lived access token>", // mint on your backend
 
   onAssetClick: function (asset) {
     // Track analytics
@@ -273,7 +273,7 @@ const gallery = PlaybookSDK.init({
 PlaybookSDK.init({
   containerId: "gallery",
   organizationSlug: "my-company",
-  authToken: "your-token",
+  getAccessToken: async () => "<short-lived access token>", // mint on your backend
 
   // Custom breakpoints for your design
   columnBreakpoints: {
@@ -300,7 +300,7 @@ function GalleryComponent() {
       sdkInstance.current = PlaybookSDK.init({
         containerId: "react-gallery",
         organizationSlug: "your-org-slug",
-        authToken: "your-auth-token",
+        getAccessToken: async () => "<short-lived access token>", // mint on your backend
 
         onAssetClick: (asset) => {
           console.log("Asset clicked:", asset);
@@ -342,7 +342,7 @@ function TypeScriptGallery() {
     const config: PlaybookConfig = {
       containerId: "ts-gallery",
       organizationSlug: "your-org-slug",
-      authToken: "your-auth-token",
+      getAccessToken: async () => "<short-lived access token>", // mint on your backend
       enableSearch: true,
       enableBoards: true,
 

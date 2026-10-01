@@ -35,7 +35,7 @@ npm run preview
 
 1. Open `src/App.tsx`
 2. Update the `SDK_CONFIG` object with your credentials:
-   - `authToken` - Your API authentication token
+   - `getAccessToken` - An async function that returns a short-lived access token minted by your backend
    - `organizationSlug` - Your organization identifier
    - `boardId` - Specific board/collection ID (optional)
 

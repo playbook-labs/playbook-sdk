@@ -3,7 +3,7 @@ import PlaybookSDK from "playbook-sdk";
 
 const SDK_CONFIG = {
   organizationSlug: "playbook-sdk",
-  authToken: "",
+  getAccessToken: async () => "" as string, // return a short-lived token from your backend
 } as const;
 
 interface Stats {
@@ -66,7 +66,7 @@ function App() {
       galleryRef.current = PlaybookSDK.init({
         containerId: "playbook-gallery",
         organizationSlug: SDK_CONFIG.organizationSlug,
-        authToken: SDK_CONFIG.authToken,
+        getAccessToken: SDK_CONFIG.getAccessToken,
         perPage: 15,
 
         enableSearch: true,
