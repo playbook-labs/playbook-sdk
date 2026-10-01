@@ -47,6 +47,7 @@
         // (error, file) => void
       };
       const settings = { ...defaultConfig, ...config };
+      settings.labels = { ...defaultConfig.labels, ...config && config.labels };
       if (typeof settings.getUploadTarget !== "function") {
         console.error(
           "Playbook Uploader: getUploadTarget(file) is required \u2014 it must return a signed target minted by your backend (never a write token)."
