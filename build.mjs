@@ -7,23 +7,26 @@ const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url)))
 const version = pkg.version;
 
 const define = { __PB_VERSION__: JSON.stringify(version) };
-const entryPoints = ["src/playbook-sdk.js"];
-const banner = {
-  js: `/*! Playbook Gallery SDK v${version} | MIT License | https://github.com/playbook-labs/playbook-sdk */`,
-};
-
-const shared = { entryPoints, define, banner, bundle: false, logLevel: "info" };
-
-await esbuild.build({
-  ...shared,
-  outfile: "dist/playbook-sdk.js",
-  minify: false,
+const bannerFor = (name) => ({
+  js: `/*! ${name} v${version} | MIT License | https://github.com/playbook-labs/playbook-sdk */`,
 });
 
-await esbuild.build({
-  ...shared,
-  outfile: "dist/playbook-sdk.min.js",
-  minify: true,
-});
+// Each source file builds to its own readable + minified UMD bundle.
+const bundles = [
+  { src: "src/playbook-sdk.js", out: "dist/playbook-sdk", name: "Playbook Gallery SDK" },
+  { src: "src/playbook-uploader.js", out: "dist/playbook-uploader", name: "Playbook Uploader SDK" },
+];
+
+for (const { src, out, name } of bundles) {
+  const shared = {
+    entryPoints: [src],
+    define,
+    banner: bannerFor(name),
+    bundle: false,
+    logLevel: "info",
+  };
+  await esbuild.build({ ...shared, outfile: `${out}.js`, minify: false });
+  await esbuild.build({ ...shared, outfile: `${out}.min.js`, minify: true });
+}
 
 console.log(`Build complete: v${version}`);
