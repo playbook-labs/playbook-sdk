@@ -438,6 +438,7 @@
       this.abortController = null;
       this.hasMoreAssets = false;
       this._accessToken = null; // cached in memory only, never persisted
+      this._tokenResolved = false; // cache validity (a token may legitimately be "")
       this._tokenPromise = null; // dedupes concurrent token resolution
 
       this.init();
@@ -446,8 +447,10 @@
     // Resolve a short-lived access token from the configured provider, caching
     // it in memory. forceRefresh drops the cache (used after a 401).
     _resolveToken(forceRefresh) {
-      if (forceRefresh) this._accessToken = null;
-      if (this._accessToken) return Promise.resolve(this._accessToken);
+      if (forceRefresh) this._tokenResolved = false;
+      // Truthiness would treat a legitimate "" token as a cache miss and
+      // re-invoke the provider on every request; gate on resolution instead.
+      if (this._tokenResolved) return Promise.resolve(this._accessToken);
       if (!this._tokenPromise) {
         this._tokenPromise = Promise.resolve(
           typeof this.config.getAccessToken === "function"
@@ -456,6 +459,7 @@
         ).then(
           (token) => {
             this._accessToken = token;
+            this._tokenResolved = true;
             this._tokenPromise = null;
             return token;
           },

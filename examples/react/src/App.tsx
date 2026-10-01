@@ -3,7 +3,11 @@ import PlaybookSDK from "playbook-sdk";
 
 const SDK_CONFIG = {
   organizationSlug: "playbook-sdk",
-  getAccessToken: async () => "" as string, // return a short-lived token from your backend
+  // Return a short-lived token minted by your backend (not a long-lived one).
+  getAccessToken: async (): Promise<string> => {
+    const res = await fetch("/playbook/token");
+    return (await res.json()).token;
+  },
 } as const;
 
 interface Stats {

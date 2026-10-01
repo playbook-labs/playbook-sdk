@@ -402,20 +402,22 @@
       this.abortController = null;
       this.hasMoreAssets = false;
       this._accessToken = null;
+      this._tokenResolved = false;
       this._tokenPromise = null;
       this.init();
     }
     // Resolve a short-lived access token from the configured provider, caching
     // it in memory. forceRefresh drops the cache (used after a 401).
     _resolveToken(forceRefresh) {
-      if (forceRefresh) this._accessToken = null;
-      if (this._accessToken) return Promise.resolve(this._accessToken);
+      if (forceRefresh) this._tokenResolved = false;
+      if (this._tokenResolved) return Promise.resolve(this._accessToken);
       if (!this._tokenPromise) {
         this._tokenPromise = Promise.resolve(
           typeof this.config.getAccessToken === "function" ? this.config.getAccessToken() : null
         ).then(
           (token) => {
             this._accessToken = token;
+            this._tokenResolved = true;
             this._tokenPromise = null;
             return token;
           },
