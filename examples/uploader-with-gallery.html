@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Playbook Uploader + Gallery</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-gray-100 p-8">
+    <div class="max-w-6xl mx-auto space-y-8">
+      <h1 class="text-3xl font-bold text-center">Upload &amp; browse</h1>
+
+      <!-- Drop zone, then the gallery below it. -->
+      <div id="uploader" class="max-w-xl mx-auto"></div>
+      <div id="gallery"></div>
+    </div>
+
+    <!-- Both bundles: the gallery (read) and the uploader (write). -->
+    <script src="../dist/playbook-sdk.min.js"></script>
+    <script src="../dist/playbook-uploader.min.js"></script>
+
+    <script>
+      const ORG = "playbook-sdk";
+
+      // One backend vends short-lived credentials for both widgets: the gallery
+      // reads with a getAccessToken token, the uploader writes via signed
+      // targets. No long-lived or write token ever reaches the browser.
+      const gallery = PlaybookSDK.init({
+        containerId: "gallery",
+        organizationSlug: ORG,
+        getAccessToken: async () =>
+          (await fetch("/playbook/token")).json().then((r) => r.token),
+      });
+
+      PlaybookUploader.init({
+        containerId: "uploader",
+
+        getUploadTarget: async (file) => {
+          const res = await fetch("/playbook/upload-target", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              filename: file.name,
+              size: file.size,
+              mediaType: file.type,
+            }),
+          });
+          if (!res.ok) throw new Error("could not get upload target");
+          return res.json();
+        },
+
+        finishUpload: async (finalize) => {
+          const res = await fetch("/playbook/finish-upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ finalize }),
+          });
+          if (!res.ok) throw new Error("could not finish upload");
+          return res.json();
+        },
+
+        // The payoff: once uploads land, refresh the gallery so the new assets
+        // appear immediately — upload and browse feel like one surface.
+        onComplete: () => {
+          if (gallery) gallery.refresh();
+        },
+      });
+    </script>
+  </body>
+</html>
