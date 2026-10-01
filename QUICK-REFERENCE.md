@@ -9,7 +9,7 @@
   PlaybookSDK.init({
     containerId: "gallery",
     organizationSlug: "your-org-slug",
-    authToken: "your-token-here",
+    getAccessToken: () => fetch("/playbook/token").then((r) => r.json()).then((r) => r.token),
   });
 </script>
 ```
@@ -34,7 +34,7 @@ PlaybookSDK.init({
   // Required
   containerId: "my-gallery",
   organizationSlug: "your-org-slug",
-  authToken: "your-token-here",
+  getAccessToken: () => fetch("/playbook/token").then((r) => r.json()).then((r) => r.token),
 
   // Optional: Root board (limits gallery to this board + children only)
   boardId: "",
@@ -105,7 +105,7 @@ PlaybookSDK.getInstance('id');  // Get existing instance
 }
 ```
 
-**Authentication:** All requests require `Authorization: Bearer {token}` header
+**Authentication:** All requests require `Authorization: Bearer {token}` header. The SDK gets the token from `getAccessToken`, which should fetch a short-lived one from your server — never put your API token in the page (see "Set Up Authentication" in `README.md`).
 
 ## 🎨 CSS Classes
 
@@ -186,7 +186,7 @@ function Gallery() {
     const g = PlaybookSDK.init({
       containerId: "gallery",
       organizationSlug: "your-org-slug",
-      authToken: "your-token-here",
+      getAccessToken: () => fetch("/playbook/token").then((r) => r.json()).then((r) => r.token),
     });
     return () => PlaybookSDK.destroy("gallery");
   }, []);

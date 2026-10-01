@@ -15,7 +15,7 @@ A beautiful, responsive masonry grid gallery with:
 ## Prerequisites
 
 - Basic HTML, CSS, and JavaScript knowledge
-- A backend API that serves images/assets (or use our mock API for testing)
+- A Playbook workspace, and an endpoint on your own server that hands the gallery an access token (see [Set Up Authentication](../README.md#1-set-up-authentication)), or use the mock below for testing
 - A modern web browser
 
 ## Step 1: Include the SDK
@@ -81,9 +81,11 @@ Add this JavaScript code:
 const gallery = PlaybookSDK.init({
   containerId: "my-gallery",
   organizationSlug: "your-org-slug",
-  authToken: "your-auth-token",
+  getAccessToken: () => fetch("/playbook/token").then((r) => r.json()).then((r) => r.token),
 });
 ```
+
+`getAccessToken` fetches a short-lived, read-only token from your own server, so your API token never reaches the browser. [Set Up Authentication](../README.md#1-set-up-authentication) shows the server side.
 
 Done. Your gallery is now live.
 
@@ -169,7 +171,7 @@ Here's a full working example:
       const gallery = PlaybookSDK.init({
         containerId: "gallery",
         organizationSlug: "your-org-slug",
-        authToken: "your-auth-token",
+        getAccessToken: () => fetch("/playbook/token").then((r) => r.json()).then((r) => r.token),
 
         // Optional: Add callbacks
         onAssetClick: function (asset) {
@@ -240,7 +242,7 @@ window.fetch = function (url) {
 PlaybookSDK.init({
   containerId: "gallery",
   organizationSlug: "test-org",
-  authToken: "test-token",
+  getAccessToken: () => "test-token", // the mock above ignores it
 });
 ```
 
@@ -252,7 +254,7 @@ PlaybookSDK.init({
 PlaybookSDK.init({
   containerId: "gallery",
   organizationSlug: "your-org-slug",
-  authToken: "your-auth-token",
+  getAccessToken: () => fetch("/playbook/token").then((r) => r.json()).then((r) => r.token),
 
   // Disable features you don't need
   enableSearch: true,
@@ -351,7 +353,7 @@ onAssetClick: function(asset) {
 PlaybookSDK.init({
   containerId: "gallery",
   organizationSlug: "your-org-slug",
-  authToken: "your-auth-token",
+  getAccessToken: () => fetch("/playbook/token").then((r) => r.json()).then((r) => r.token),
 
   onSearch: function (query) {
     // Track searches

@@ -35,7 +35,7 @@ npm run preview
 
 1. Open `src/App.tsx`
 2. Update the `SDK_CONFIG` object with your credentials:
-   - `authToken` - Your API authentication token
+   - `getAccessToken` - Fetches a short-lived access token from `/playbook/token`, which the dev server proxies to `examples/backend/token-server.mjs` on port 3001. Start that server first.
    - `organizationSlug` - Your organization identifier
    - `boardId` - Specific board/collection ID (optional)
 

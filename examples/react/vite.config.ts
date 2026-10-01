@@ -6,6 +6,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
-    open: true
+    open: true,
+    // examples/backend/token-server.mjs
+    proxy: { '/playbook': 'http://localhost:3001' }
   }
 })

@@ -2,7 +2,7 @@
 
 A lightweight frontend SDK for creating masonry grid galleries with search, board navigation, and modal views. Works for asset management, photo galleries, and media libraries.
 
-![Version](https://img.shields.io/badge/version-1.0.4-blue.svg)
+![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Size](https://img.shields.io/badge/size-~7kB%20gzipped-orange.svg)
 
@@ -49,7 +49,7 @@ A lightweight frontend SDK for creating masonry grid galleries with search, boar
       const gallery = PlaybookSDK.init({
         containerId: "my-gallery",
         organizationSlug: "your-org-slug",
-        authToken: "your-auth-token",
+        getAccessToken: () => fetch("/playbook/token").then((r) => r.json()).then((r) => r.token),
       });
     </script>
   </body>
@@ -68,7 +68,7 @@ import PlaybookSDK from "playbook-sdk";
 const gallery = PlaybookSDK.init({
   containerId: "my-gallery",
   organizationSlug: "your-org-slug",
-  authToken: "your-auth-token",
+  getAccessToken: () => fetch("/playbook/token").then((r) => r.json()).then((r) => r.token),
 });
 ```
 
@@ -82,13 +82,20 @@ Download `playbook-sdk.min.js` and include it in your project:
 
 ## Quick Start
 
-### 1. Get Your Playbook API Credentials
+### 1. Set Up Authentication
 
-API token management is available in the Playbook app — open **Developer → SDK** at [playbook.com](https://www.playbook.com/sign-up?navigateTo=sdk) to create and manage your own tokens (no approval step required). You'll need:
+The gallery runs in your visitors' browsers, so it must never be given your API token: anyone can read it from the page. Instead, your server exchanges that token for a short-lived, read-only one limited to a single board, and the SDK fetches it from your server through `getAccessToken`.
+
+1. Create an API token in the Playbook app under **Developer → SDK** at [playbook.com](https://www.playbook.com/sign-up?navigateTo=sdk) (no approval step required). Keep it on your server.
+2. Add an endpoint to your server that calls `POST https://api.playbook.com/v1/{organizationSlug}/access_tokens` with that token and the `board_token` to expose, and returns `data.access_token` from the response. [`examples/backend/token-server.mjs`](examples/backend/token-server.mjs) is a complete, dependency-free version.
+3. Point `getAccessToken` at that endpoint. The examples below assume it lives at `/playbook/token` and answers `{ "token": "..." }`.
+
+The SDK calls `getAccessToken` before its first request and again when the token expires, and keeps the token in memory only. The token can read the board it was created for and that board's sub-boards, nothing else, for at most an hour.
+
+You'll also need:
 
 - **Organization Slug** (e.g., `playbook-sdk`)
-- **Auth Token** — an API token, sent as a `Bearer` token in the `Authorization` header
-- **Board ID** (optional - to scope gallery to specific board)
+- **Board ID** (optional) — the board the access token was created for, or one of its sub-boards
 
 ### 2. Create HTML Container
 
@@ -102,7 +109,7 @@ API token management is available in the Playbook app — open **Developer → S
 const gallery = PlaybookSDK.init({
   containerId: "gallery-container",
   organizationSlug: "playbook-sdk", // Your organization/workspace slug
-  authToken: "your-token-here", // Your API access token
+  getAccessToken: () => fetch("/playbook/token").then((r) => r.json()).then((r) => r.token),
   boardId: "", // Optional: Scope gallery to specific board
   enableSearch: true,
   enableBoards: true,
@@ -121,14 +128,15 @@ PlaybookSDK.init({
   // ===== Required =====
   containerId: "my-gallery", // ID of the container element
   organizationSlug: "your-org-slug", // Your Playbook workspace slug
-  authToken: "your-auth-token", // Your API bearer token
+  getAccessToken: () => fetch("/playbook/token").then((r) => r.json()).then((r) => r.token),
 
   // ===== Optional Scoping =====
-  boardId: "", // Scope to specific board (empty = workspace-wide)
+  boardId: "", // Scope to specific board (empty = everything the access token can read)
   // When boardId is set:
   // - "All Assets" shows only assets from this board + nested boards
   // - Board navigation shows only children of this board
   // - Users cannot navigate outside this board tree
+  // - Search covers only this board + nested boards
 
   // ===== Features =====
   enableSearch: true, // Show search bar with AI toggle
@@ -181,14 +189,14 @@ PlaybookSDK.init({
 
 ### Examples
 
-**Workspace-wide gallery:**
+**Everything the access token can read:**
 
 ```javascript
 PlaybookSDK.init({
   containerId: "gallery",
   organizationSlug: "acme-corp",
-  authToken: "abc123...",
-  boardId: "", // Empty = show all workspace assets
+  getAccessToken: () => fetch("/playbook/token").then((r) => r.json()).then((r) => r.token),
+  boardId: "", // Empty = the token's board and its sub-boards
 });
 ```
 
@@ -198,7 +206,7 @@ PlaybookSDK.init({
 PlaybookSDK.init({
   containerId: "gallery",
   organizationSlug: "acme-corp",
-  authToken: "abc123...",
+  getAccessToken: () => fetch("/playbook/token").then((r) => r.json()).then((r) => r.token),
   boardId: "SddGjNcAFZThZb3yVTSvbGbe", // Only this board + children
 });
 ```
@@ -225,7 +233,7 @@ PlaybookSDK.init({
       PlaybookSDK.init({
         containerId: "gallery",
         organizationSlug: "my-company",
-        authToken: "your-token-here",
+        getAccessToken: () => fetch("/playbook/token").then((r) => r.json()).then((r) => r.token),
       });
     </script>
   </body>
@@ -238,7 +246,7 @@ PlaybookSDK.init({
 const gallery = PlaybookSDK.init({
   containerId: "gallery",
   organizationSlug: "my-company",
-  authToken: "your-token",
+  getAccessToken: () => fetch("/playbook/token").then((r) => r.json()).then((r) => r.token),
 
   onAssetClick: function (asset) {
     // Track analytics
@@ -273,7 +281,7 @@ const gallery = PlaybookSDK.init({
 PlaybookSDK.init({
   containerId: "gallery",
   organizationSlug: "my-company",
-  authToken: "your-token",
+  getAccessToken: () => fetch("/playbook/token").then((r) => r.json()).then((r) => r.token),
 
   // Custom breakpoints for your design
   columnBreakpoints: {
@@ -300,7 +308,7 @@ function GalleryComponent() {
       sdkInstance.current = PlaybookSDK.init({
         containerId: "react-gallery",
         organizationSlug: "your-org-slug",
-        authToken: "your-auth-token",
+        getAccessToken: () => fetch("/playbook/token").then((r) => r.json()).then((r) => r.token),
 
         onAssetClick: (asset) => {
           console.log("Asset clicked:", asset);
@@ -342,7 +350,7 @@ function TypeScriptGallery() {
     const config: PlaybookConfig = {
       containerId: "ts-gallery",
       organizationSlug: "your-org-slug",
-      authToken: "your-auth-token",
+      getAccessToken: () => fetch("/playbook/token").then((r) => r.json()).then((r) => r.token),
       enableSearch: true,
       enableBoards: true,
 

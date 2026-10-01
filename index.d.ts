@@ -117,11 +117,21 @@ declare module "playbook-sdk" {
     organizationSlug: string;
 
     /**
-     * Authentication token for API requests
-     * Will be sent as "Authorization: Bearer {token}" header
-     * @required
+     * Returns a short-lived access token fetched from your server (see "Set Up
+     * Authentication" in the README). Called before the first request and
+     * again after a 401; the token is kept in memory only. Must resolve to a
+     * non-empty string.
+     *
+     * Required unless the deprecated `authToken` is provided.
      */
-    authToken: string;
+    getAccessToken?: () => string | Promise<string>;
+
+    /**
+     * Static token, sent as "Authorization: Bearer {token}".
+     * @deprecated Anyone can read a token placed in the page. Use
+     * `getAccessToken`; this option will be removed in a future version.
+     */
+    authToken?: string;
 
     /**
      * Optional board ID to scope the gallery to a specific board

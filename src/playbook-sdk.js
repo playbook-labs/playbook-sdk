@@ -21,7 +21,9 @@
     init: function (config) {
       const defaultConfig = {
         containerId: "__playbook-embed",
-        authToken: "",
+        // async () => token; called before the first request and after a 401.
+        getAccessToken: null,
+        authToken: "", // deprecated: use getAccessToken
         organizationSlug: "",
         boardId: "",
         perPage: 50,
@@ -57,8 +59,21 @@
         return null;
       }
 
-      if (!settings.authToken) {
-        console.error("Playbook SDK: authToken is required");
+      // Deprecated: a static authToken is wrapped as a provider.
+      if (!settings.getAccessToken && settings.authToken) {
+        console.warn(
+          "Playbook SDK: `authToken` is deprecated and will be removed in a " +
+            "future version. Provide `getAccessToken: async () => token` instead."
+        );
+        const staticToken = settings.authToken;
+        settings.getAccessToken = () => staticToken;
+      }
+
+      if (typeof settings.getAccessToken !== "function") {
+        console.error(
+          "Playbook SDK: `getAccessToken` is required (an async function that " +
+            "returns a short-lived access token)."
+        );
         return null;
       }
 
@@ -409,6 +424,9 @@
       this.modalOpen = false;
       this.currentAssetIndex = -1;
       this.currentBoardId = "all";
+      // boardId may be a numeric id; search needs the board's token, which
+      // replaces this once the root board has been fetched.
+      this.rootBoardToken = config.boardId || "";
       this.currentSearchQuery = "";
       this.useAiSearch = false;
       this.loading = false;
@@ -418,8 +436,61 @@
       this.eventListeners = [];
       this.abortController = null;
       this.hasMoreAssets = false;
+      this._accessToken = null; // kept in memory only
+      this._tokenPromise = null; // provider call in flight, shared by concurrent requests
 
       this.init();
+    }
+
+    // Returns the cached token, or asks the provider for one. rejectedToken is
+    // the token a request just got a 401 with: it is dropped only if it is
+    // still the cached one, so requests that fail together share one refresh.
+    _resolveToken(rejectedToken) {
+      if (rejectedToken && rejectedToken === this._accessToken) {
+        this._accessToken = null;
+      }
+      if (this._accessToken) return Promise.resolve(this._accessToken);
+      if (!this._tokenPromise) {
+        this._tokenPromise = Promise.resolve(
+          typeof this.config.getAccessToken === "function"
+            ? this.config.getAccessToken()
+            : null
+        ).then(
+          (token) => {
+            this._tokenPromise = null;
+            // Never send "Bearer undefined" or "Bearer [object Object]".
+            if (typeof token !== "string" || !token) {
+              throw new Error(
+                "`getAccessToken` must return a non-empty string"
+              );
+            }
+            this._accessToken = token;
+            return token;
+          },
+          (err) => {
+            this._tokenPromise = null;
+            throw err;
+          }
+        );
+      }
+      return this._tokenPromise;
+    }
+
+    // Every API request goes through here: adds the bearer token and, on a
+    // 401, refreshes it once and retries.
+    async _authedFetch(url, opts = {}) {
+      const send = async (rejectedToken) => {
+        const token = await this._resolveToken(rejectedToken);
+        const headers = {
+          "Content-Type": "application/json",
+          ...(opts.headers || {}),
+          Authorization: `Bearer ${token}`,
+        };
+        return { token, response: await fetch(url, { ...opts, headers }) };
+      };
+      const first = await send();
+      if (first.response.status !== 401) return first.response;
+      return (await send(first.token)).response;
     }
 
     init() {
@@ -650,15 +721,7 @@
     async fetchInitialBoardInfo(boardId) {
       try {
         const url = `${this.config.apiBaseUrl}/boards/${boardId}`;
-        const headers = {
-          "Content-Type": "application/json",
-        };
-
-        if (this.config.authToken) {
-          headers["Authorization"] = `Bearer ${this.config.authToken}`;
-        }
-
-        const response = await fetch(url, { headers });
+        const response = await this._authedFetch(url);
 
         if (!response.ok) {
           throw new Error(`Failed to fetch board info: ${response.statusText}`);
@@ -668,6 +731,7 @@
         const board = data.data || data.board || data;
         const boardTitle = board.title || board.name || boardId;
 
+        if (board.token) this.rootBoardToken = board.token;
         this.currentBoardTitle = boardTitle;
 
         if (this.config.onBoardChange) {
@@ -694,19 +758,11 @@
           url = `${this.config.apiBaseUrl}/boards`;
         }
 
-        const headers = {
-          "Content-Type": "application/json",
-        };
-
-        if (this.config.authToken) {
-          headers["Authorization"] = `Bearer ${this.config.authToken}`;
-        }
-
-        const response = await fetch(url, { headers });
+        const response = await this._authedFetch(url);
 
         if (!response.ok) {
           if (response.status === 401 || response.status === 403) {
-            throw new Error(`Authentication failed. Check your authToken.`);
+            throw new Error(`Authentication failed. Check your access token.`);
           }
           if (response.status === 404) {
             throw new Error(`Organization not found. Check your organizationSlug.`);
@@ -794,18 +850,13 @@
             ? `${this.config.apiBaseUrl}/boards/${boardId}/assets?${params}`
             : `${this.config.apiBaseUrl}/assets?${params}`;
 
-        const headers = { "Content-Type": "application/json" };
-        if (this.config.authToken)
-          headers["Authorization"] = `Bearer ${this.config.authToken}`;
-
-        const response = await fetch(url, {
-          headers,
+        const response = await this._authedFetch(url, {
           signal: this.abortController.signal,
         });
 
         if (!response.ok) {
           if (response.status === 401 || response.status === 403) {
-            throw new Error(`Authentication failed. Check your authToken.`);
+            throw new Error(`Authentication failed. Check your access token.`);
           }
           if (response.status === 404) {
             throw new Error(`Organization not found. Check your organizationSlug.`);
@@ -988,18 +1039,17 @@
       try {
         const searchEndpoint = this.useAiSearch ? "ai_search" : "search";
         const params = new URLSearchParams({ query });
+        // Keep search inside the root board.
+        if (this.rootBoardToken) {
+          params.append("filters[recursive_boards][]", this.rootBoardToken);
+        }
         if (!this.useAiSearch) {
           params.append("page", page.toString());
           params.append("per_page", this.perPage.toString());
         }
 
         const url = `${this.config.apiBaseUrl}/${searchEndpoint}?${params}`;
-        const headers = { "Content-Type": "application/json" };
-        if (this.config.authToken)
-          headers["Authorization"] = `Bearer ${this.config.authToken}`;
-
-        const response = await fetch(url, {
-          headers,
+        const response = await this._authedFetch(url, {
           signal: this.abortController.signal,
         });
         if (!response.ok)
@@ -1086,15 +1136,7 @@
     ) {
       try {
         const url = `${this.config.apiBaseUrl}/boards/${boardId}/children`;
-        const headers = {
-          "Content-Type": "application/json",
-        };
-
-        if (this.config.authToken) {
-          headers["Authorization"] = `Bearer ${this.config.authToken}`;
-        }
-
-        const response = await fetch(url, { headers });
+        const response = await this._authedFetch(url);
         if (!response.ok) return;
 
         const data = await response.json();

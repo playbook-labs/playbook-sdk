@@ -44,6 +44,8 @@ export interface PlaybookSDKConfig {
   containerId: string;
   organizationSlug: string;
 
+  getAccessToken?: () => string | Promise<string>;
+  /** @deprecated Use `getAccessToken` to return a short-lived, backend-minted token instead. */
   authToken?: string;
   boardId?: string;
 
