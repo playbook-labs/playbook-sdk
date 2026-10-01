@@ -339,11 +339,116 @@ declare module "playbook-sdk" {
   export default PlaybookSDK;
 }
 
+declare module "playbook-sdk/uploader" {
+  import { Asset } from "playbook-sdk";
+
+  /** The one-time, signed upload target your backend returns to the browser. */
+  export interface UploadTarget {
+    /** Signed, single-use URL the bytes are sent to. */
+    uploadUrl: string;
+    /** HTTP method for the upload request (default "PUT"). */
+    method?: string;
+    /** Request headers (default `{ "Content-Type": file.type }`). */
+    headers?: { [key: string]: string };
+    /** Opaque data passed back to finishUpload (e.g. the signed GCS id). */
+    finalize?: any;
+  }
+
+  export interface UploaderConfig {
+    /** ID of the container element the uploader renders into. */
+    containerId?: string;
+    /**
+     * REQUIRED. Returns a signed upload target minted by YOUR backend via
+     * Playbook's create_upload_url. Never return a write token to the browser.
+     */
+    getUploadTarget: (file: File) => Promise<UploadTarget>;
+    /**
+     * Called after the bytes land so your backend can call Playbook's
+     * finish_upload and return the created asset.
+     */
+    finishUpload?: (finalize: any, file: File) => Promise<Asset>;
+    /** "dropzone" (full drag area, default) or "button" (compact trigger). */
+    variant?: "dropzone" | "button";
+    /** Accepted MIME types for the file input (default "image/*,video/*"). */
+    accept?: string;
+    /** Max file size in bytes (default 104857600 — the create_upload_url ceiling). */
+    maxFileSizeBytes?: number;
+    /** Max number of files per selection (0 = unlimited). */
+    maxFiles?: number;
+    /** Allow selecting multiple files (default true). */
+    multiple?: boolean;
+    /** Begin uploading as soon as files are selected (default true). */
+    autoUpload?: boolean;
+    /** Dropzone/button copy. */
+    labels?: { prompt?: string; hint?: string; button?: string };
+    onSelect?: (files: File[]) => void;
+    onProgress?: (file: File, pct: number) => void;
+    onFileComplete?: (asset: Asset | null, file: File) => void;
+    onComplete?: (assets: Array<Asset | null>) => void;
+    onError?: (error: Error, file: File) => void;
+  }
+
+  export interface UploaderInstance {
+    config: UploaderConfig;
+    container: HTMLElement;
+    /** Destroy the uploader instance and clean up DOM + listeners. */
+    destroy(): void;
+  }
+
+  export interface PlaybookUploaderInterface {
+    version: string;
+    instances: { [containerId: string]: UploaderInstance };
+    /** Initialize a new uploader instance (null if container not found). */
+    init(config: UploaderConfig): UploaderInstance | null;
+    /** Destroy an uploader instance by container ID. */
+    destroy(containerId: string): void;
+  }
+
+  const PlaybookUploader: PlaybookUploaderInterface;
+  export default PlaybookUploader;
+}
+
+declare module "playbook-sdk/viewer" {
+  /** A single viewable asset. */
+  export interface ViewerItem {
+    /** Full-size URL of the image or video. */
+    src: string;
+    /** MIME type; a value starting with "video" renders a <video>. */
+    type?: string;
+    /** Optional caption. */
+    title?: string;
+  }
+
+  export interface ViewerOpenOptions extends Partial<ViewerItem> {
+    /** A navigable set; takes precedence over a single src/type/title. */
+    items?: ViewerItem[];
+    /** Starting index into `items` (default 0). */
+    index?: number;
+  }
+
+  export interface PlaybookViewerInterface {
+    version: string;
+    /** Open the lightbox for one asset or a navigable set. */
+    open(options: ViewerOpenOptions): void;
+    /** Close the lightbox. */
+    close(): void;
+    /** Advance to the next item in a set. */
+    next(): void;
+    /** Go to the previous item in a set. */
+    prev(): void;
+  }
+
+  const PlaybookViewer: PlaybookViewerInterface;
+  export default PlaybookViewer;
+}
+
 /**
  * Global type declaration for browser script tag usage
  */
 declare global {
   interface Window {
     PlaybookSDK: import("playbook-sdk").PlaybookSDKInterface;
+    PlaybookUploader: import("playbook-sdk/uploader").PlaybookUploaderInterface;
+    PlaybookViewer: import("playbook-sdk/viewer").PlaybookViewerInterface;
   }
 }

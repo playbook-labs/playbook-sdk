@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Playbook Uploader - Example</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-gray-100 p-8">
+    <div class="max-w-xl mx-auto">
+      <h1 class="text-3xl font-bold mb-8 text-center">Upload to Playbook</h1>
+
+      <!-- This is all you need! -->
+      <div id="uploader"></div>
+    </div>
+
+    <!-- Include SDK -->
+    <script src="../dist/playbook-uploader.min.js"></script>
+
+    <script>
+      // The browser holds NO write token. getUploadTarget / finishUpload call
+      // your backend (see examples/backend/upload-target.js), which holds the
+      // secret and talks to Playbook.
+      PlaybookUploader.init({
+        containerId: "uploader",
+
+        getUploadTarget: async (file) => {
+          const res = await fetch("/playbook/upload-target", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              filename: file.name,
+              size: file.size,
+              mediaType: file.type,
+            }),
+          });
+          if (!res.ok) throw new Error("could not get upload target");
+          return res.json(); // { uploadUrl, method, headers, finalize }
+        },
+
+        finishUpload: async (finalize) => {
+          const res = await fetch("/playbook/finish-upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ finalize }),
+          });
+          if (!res.ok) throw new Error("could not finish upload");
+          return res.json(); // the created asset
+        },
+
+        onProgress: (file, pct) => console.log(file.name, pct + "%"),
+        onFileComplete: (asset) => console.log("uploaded", asset),
+        onComplete: (assets) => console.log("all done", assets.length),
+        onError: (err) => console.error(err),
+      });
+    </script>
+  </body>
+</html>
