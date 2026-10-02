@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0]
+
+### Added
+
+- `getAccessToken`: an async function the SDK calls for a short-lived access
+  token before its first request and again when the token expires (on a 401).
+  The token is kept in memory only. Requests that start or fail together share
+  one call to it.
+- `examples/backend/token-server.mjs`, a dependency-free server that exchanges
+  an API token for a short-lived, read-only, single-board token.
+
+### Deprecated
+
+- `authToken`. It still works and logs a warning; a long-lived token in the
+  page can be read by anyone. Use `getAccessToken`.
+
+### Fixed
+
+- Search and AI search now stay inside `boardId` and its sub-boards. They
+  used to search everything the token could read, even in a gallery limited
+  to one board.
+
 ## [1.0.4]
 
 ### Changed
@@ -39,6 +61,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Initial release: responsive masonry gallery, search, board navigation,
   modal viewer, download support, and TypeScript definitions.
 
+[1.1.0]: https://github.com/playbook-labs/playbook-sdk/releases/tag/v1.1.0
 [1.0.4]: https://github.com/playbook-labs/playbook-sdk/releases/tag/v1.0.4
 [1.0.3]: https://github.com/playbook-labs/playbook-sdk/releases/tag/v1.0.3
 [1.0.0]: https://github.com/playbook-labs/playbook-sdk/releases/tag/v1.0.0

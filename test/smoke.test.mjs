@@ -26,8 +26,15 @@ test("init() returns null when organizationSlug is missing", () => {
   assert.equal(SDK.init({ authToken: "t", containerId: "x" }), null);
 });
 
-test("init() returns null when authToken is missing", () => {
+test("init() returns null when no credential is provided", () => {
   assert.equal(SDK.init({ organizationSlug: "acme", containerId: "x" }), null);
+});
+
+test("init() rejects a non-function getAccessToken", () => {
+  assert.equal(
+    SDK.init({ organizationSlug: "acme", containerId: "x", getAccessToken: "nope" }),
+    null
+  );
 });
 
 test("getInstance() returns null for an unknown container", () => {

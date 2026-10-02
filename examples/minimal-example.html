@@ -23,15 +23,17 @@
       // ============================================
       const CONFIG = {
         organizationSlug: "playbook-sdk", // Replace with your organization slug
-        authToken: "access_token", // Replace with your auth token
-        boardId: "board_id", // Optional: Replace with your board/collection ID
+        // Your server's token endpoint (examples/backend/token-server.mjs is one).
+        // If it is on another origin, use its full URL and set ALLOWED_ORIGIN there.
+        getAccessToken: () => fetch("/playbook/token").then((r) => r.json()).then((r) => r.token),
+        boardId: "board_id", // Optional: the board the token was created for, or a sub-board
       };
 
       // Initialize with minimal configuration
       PlaybookSDK.init({
         containerId: "gallery",
         organizationSlug: CONFIG.organizationSlug,
-        authToken: CONFIG.authToken,
+        getAccessToken: CONFIG.getAccessToken,
         boardId: CONFIG.boardId,
 
         enableSearch: true,

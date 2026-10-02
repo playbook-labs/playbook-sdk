@@ -3,7 +3,12 @@ import PlaybookSDK from "playbook-sdk";
 
 const SDK_CONFIG = {
   organizationSlug: "playbook-sdk",
-  authToken: "",
+  // Your server's token endpoint; vite.config.ts proxies it to
+  // examples/backend/token-server.mjs in dev.
+  getAccessToken: async (): Promise<string> => {
+    const res = await fetch("/playbook/token");
+    return (await res.json()).token;
+  },
 } as const;
 
 interface Stats {
@@ -66,7 +71,7 @@ function App() {
       galleryRef.current = PlaybookSDK.init({
         containerId: "playbook-gallery",
         organizationSlug: SDK_CONFIG.organizationSlug,
-        authToken: SDK_CONFIG.authToken,
+        getAccessToken: SDK_CONFIG.getAccessToken,
         perPage: 15,
 
         enableSearch: true,
