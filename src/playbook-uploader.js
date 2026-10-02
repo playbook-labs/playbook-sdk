@@ -379,25 +379,37 @@
     //   backblaze  → single PUT (<5MB) or one PUT per presigned part (>=5MB)
     async _transfer(file, target, row) {
       const contentType = file.type || "application/octet-stream";
+      const meta = target.encrypted_organization_metadata;
+      const onPct = (pct) => this._progress(file, row, pct);
+
       if (target.storage_provider === "gcs") {
+        if (meta == null) {
+          throw new Error("upload_prepare missing encrypted_organization_metadata");
+        }
         const sessionUrl = await this._gcsInitiate(file, target);
-        await this._putXhr(sessionUrl, file, { "Content-Type": contentType }, (pct) =>
-          this._progress(file, row, pct)
-        );
+        await this._putXhr(sessionUrl, file, { "Content-Type": contentType }, onPct);
       } else if (target.multipart_upload_id && target.parts && target.parts.length) {
+        if (!(target.part_size > 0)) {
+          throw new Error("multipart upload_prepare returned no part_size");
+        }
         await this._transferMultipart(file, target, row);
-      } else {
+      } else if (target.storage_provider === "backblaze") {
+        if (meta == null) {
+          throw new Error("upload_prepare missing encrypted_organization_metadata");
+        }
         await this._putXhr(
           target.upload_url,
           file,
           {
             "Content-Type": contentType,
             "x-amz-meta-extension": target.file_extension || "",
-            "x-amz-meta-encrypted-organization-metadata":
-              target.encrypted_organization_metadata,
+            "x-amz-meta-encrypted-organization-metadata": meta,
           },
-          (pct) => this._progress(file, row, pct)
+          onPct
         );
+      } else {
+        // Fail fast rather than ship bytes with the wrong provider's headers.
+        throw new Error(`Unsupported storage_provider: ${target.storage_provider}`);
       }
     }
 
@@ -452,6 +464,7 @@
         );
         uploaded += chunk.size;
       }
+      this._progress(file, row, 100); // guarantee the bar lands at 100%
     }
 
     _isHttps(url) {
