@@ -14,12 +14,16 @@ talks to Playbook:
 ```
 browser                     your backend                 Playbook
 ───────                     ────────────                 ────────
-getUploadTarget(file)  ──►  create_upload_url      ──►   signed target
-     PUT bytes  ───────────────────────────────────►    (direct to storage)
-finishUpload(finalize) ──►  finish_upload          ──►   asset
+getUploadTarget(file)  ──►  assets/upload_prepare  ──►   signed target
+     transfer bytes  ──────────────────────────────►    (direct to storage)
+finishUpload(target)   ──►  assets/upload_complete ──►   asset
 ```
 
-The browser only ever holds a short-lived, single-use upload target. See
+The transfer step is **provider-aware** — `upload_prepare` reports a
+`storage_provider`, and the SDK does whichever it calls for: **GCS** (initiate a
+resumable session with a POST, then PUT to it) or **Backblaze** (a single PUT, or
+one PUT per presigned part for files ≥ 5 MB). You don't handle any of that; you
+just supply the two backend callbacks. See
 [`examples/backend/upload-target.js`](../examples/backend/upload-target.js) for a
 runnable reference backend, and
 [`examples/uploader-example.html`](../examples/uploader-example.html) for the
@@ -34,7 +38,7 @@ client wiring.
   PlaybookUploader.init({
     containerId: "uploader",
 
-    // Ask YOUR backend for a signed target (it calls create_upload_url).
+    // Your backend calls assets/upload_prepare and returns its `data`.
     getUploadTarget: async (file) => {
       const res = await fetch("/playbook/upload-target", {
         method: "POST",
@@ -45,15 +49,15 @@ client wiring.
           mediaType: file.type,
         }),
       });
-      return res.json(); // { uploadUrl, method, headers, finalize }
+      return res.json(); // upload_prepare data (storage_provider, upload_url, …)
     },
 
-    // After the bytes land, your backend calls finish_upload.
-    finishUpload: async (finalize) => {
+    // After the transfer, your backend calls assets/upload_complete.
+    finishUpload: async (target) => {
       const res = await fetch("/playbook/finish-upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ finalize }),
+        body: JSON.stringify({ target }),
       });
       return res.json(); // the created asset
     },
@@ -68,10 +72,10 @@ client wiring.
 | Option | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `containerId` | `string` | `"__playbook-uploader"` | Element the uploader renders into. |
-| `getUploadTarget` | `(file) => Promise<UploadTarget>` | — | **Required.** Signed target from your backend. |
-| `finishUpload` | `(finalize, file) => Promise<Asset>` | — | Register the asset after upload. |
+| `getUploadTarget` | `(file) => Promise<UploadTarget>` | — | **Required.** `upload_prepare` data from your backend. |
+| `finishUpload` | `(target, file) => Promise<Asset>` | — | Register the asset after the transfer. |
 | `accept` | `string` | `"image/*,video/*"` | File input filter. |
-| `maxFileSizeBytes` | `number` | `104857600` | 100 MB — the `create_upload_url` ceiling. |
+| `maxFileSizeBytes` | `number` | `104857600` | Client-side cap (UX only); the API enforces real limits. |
 | `maxFiles` | `number` | `0` | Per-selection cap; `0` = unlimited. |
 | `concurrency` | `number` | `3` | Max uploads in flight at once. |
 | `multiple` | `boolean` | `true` | Allow multi-select. |
@@ -85,24 +89,28 @@ client wiring.
 
 ## `UploadTarget` shape
 
-What `getUploadTarget` resolves to — your backend builds this from
-`create_upload_url`:
+What `getUploadTarget` resolves to — the `data` from Playbook's
+`assets/upload_prepare`, returned by your backend verbatim. The SDK reads it to
+perform the transfer; none of it is secret (signed URLs + opaque metadata):
 
 ```ts
 {
-  uploadUrl: string;              // signed, single-use
-  method?: string;                // default "PUT"
-  headers?: Record<string,string>;// default { "Content-Type": file.type }
-  finalize?: any;                 // opaque; handed back to finishUpload
+  storage_provider: "gcs" | "backblaze";
+  upload_url?: string | null;              // GCS resumable-init POST, or B2 single PUT
+  signed_gcs_id: string;                   // passed back to upload_complete
+  encrypted_organization_metadata: string; // carried in the storage headers
+  file_extension?: string | null;
+  multipart_upload_id?: string | null;     // B2 multipart (>= 5 MB)
+  part_size?: number | null;
+  parts?: { part_number: number; url: string }[] | null;
 }
 ```
 
-`finalize` is yours and the SDK never inspects it — but keep it **opaque**: put
-only a server-issued id in it (the `signed_gcs_id`), not the `mediaType`, `size`,
-`title`, or a `collection_token`. It round-trips through the browser, so anything
-you place here is attacker-controlled by the time `finishUpload` returns it. The
-backend must look up the values it signed by that id and ignore the client's echo
-(see the reference backend's `pending` map).
+The SDK hands this whole object back to `finishUpload`; your backend completes
+with its `signed_gcs_id` (+ `multipart_upload_id`). Those ids are verified by the
+Playbook API, so a forged one fails — but the **title and board must be decided
+server-side** (bound at prepare, re-read at complete), never taken from the
+browser's echo.
 
 ## Security checklist for your backend
 
@@ -113,10 +121,11 @@ must:
 - **Authenticate the caller** — the reference backend ships `requireAuth` as a
   `501` stub so an open endpoint can't be deployed by accident.
 - **Lock CORS** to your own origin(s); never wildcard.
-- **Rate-limit** — an upload target is a Playbook API call and storage write.
-- **Bind the signed values server-side** and re-read them at finish; never trust
-  `mediaType`/`size`/`title`/`collection_token` from the request body.
-- **Re-validate** size (as an integer ≤ 100 MB) and MIME against an allowlist.
+- **Rate-limit** — each prepare is a Playbook API call and a storage write.
+- **Decide `title`/`collection_token` server-side**, bound at `upload_prepare`
+  (keyed by `signed_gcs_id`) and re-read at `upload_complete` — never file an
+  asset using values echoed back from the browser.
+- **Re-validate** size (a positive integer) and MIME against an allowlist.
 
 ## Showing uploads in a gallery
 

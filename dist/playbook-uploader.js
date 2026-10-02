@@ -11,12 +11,15 @@
     init: function(config) {
       const defaultConfig = {
         containerId: "__playbook-uploader",
-        // REQUIRED. async (file) => { uploadUrl, method?, headers?, finalize? }
-        // Mint this on YOUR backend via Playbook's create_upload_url. Never a
-        // write token in the browser.
+        // REQUIRED. async (file) => upload_prepare data. Call YOUR backend,
+        // which calls Playbook's POST /v1/{org}/assets/upload_prepare and returns
+        // its `data` (storage_provider, upload_url, signed_gcs_id,
+        // encrypted_organization_metadata, file_extension, multipart_upload_id,
+        // part_size, parts). The write token stays on your server.
         getUploadTarget: null,
-        // Optional. async (finalize, file) => asset. Called after the bytes land
-        // so your backend can call Playbook's finish_upload and return the asset.
+        // Optional. async (target, file) => asset. Called after the bytes land;
+        // your backend calls POST /v1/{org}/assets/upload_complete with the
+        // target's signed_gcs_id (+ multipart_upload_id) and returns the asset.
         finishUpload: null,
         variant: "dropzone",
         // "dropzone" (full drag area) | "button" (compact)
@@ -285,14 +288,14 @@
       try {
         row.status.textContent = "Preparing\u2026";
         const target = await this.config.getUploadTarget(file);
-        if (!target || !target.uploadUrl) {
-          throw new Error("getUploadTarget did not return an uploadUrl");
+        if (!target || !target.signed_gcs_id) {
+          throw new Error("getUploadTarget must return the upload_prepare data");
         }
-        await this._put(file, target, row);
+        await this._transfer(file, target, row);
         let asset = null;
         if (typeof this.config.finishUpload === "function") {
           row.status.textContent = "Finishing\u2026";
-          asset = await this.config.finishUpload(target.finalize, file);
+          asset = await this.config.finishUpload(target, file);
         }
         row.item.classList.add("pb-uploader-item--done");
         row.status.textContent = "Done";
@@ -305,37 +308,124 @@
         this._fail(row, file, err);
       }
     }
-    // XHR (not fetch) so we get upload progress events, zero-dependency.
-    _put(file, target, row) {
+    // Transfer the bytes to storage. The shape of this step depends on the
+    // provider reported by upload_prepare:
+    //   gcs        → initiate a resumable session (POST), then PUT to it
+    //   backblaze  → single PUT (<5MB) or one PUT per presigned part (>=5MB)
+    async _transfer(file, target, row) {
+      const contentType = file.type || "application/octet-stream";
+      if (target.storage_provider === "gcs") {
+        const sessionUrl = await this._gcsInitiate(file, target);
+        await this._putXhr(
+          sessionUrl,
+          file,
+          { "Content-Type": contentType },
+          (pct) => this._progress(file, row, pct)
+        );
+      } else if (target.multipart_upload_id && target.parts && target.parts.length) {
+        await this._transferMultipart(file, target, row);
+      } else {
+        await this._putXhr(
+          target.upload_url,
+          file,
+          {
+            "Content-Type": contentType,
+            "x-amz-meta-extension": target.file_extension || "",
+            "x-amz-meta-encrypted-organization-metadata": target.encrypted_organization_metadata
+          },
+          (pct) => this._progress(file, row, pct)
+        );
+      }
+    }
+    // GCS resumable: POST to start a session, read the Location header (the
+    // storage bucket's CORS must expose it), and return the session URL.
+    _gcsInitiate(file, target) {
       return new Promise((resolve, reject) => {
-        let url;
-        try {
-          url = new URL(target.uploadUrl);
-        } catch (e) {
-          return reject(new Error("Invalid upload URL"));
-        }
-        if (url.protocol !== "https:") {
+        if (!this._isHttps(target.upload_url)) {
           return reject(new Error("Upload URL must be https"));
         }
         const xhr = new XMLHttpRequest();
-        xhr.open(target.method || "PUT", target.uploadUrl);
-        const headers = target.headers || { "Content-Type": file.type };
-        Object.keys(headers).forEach((k) => {
-          if (SAFE_UPLOAD_HEADER.test(k)) xhr.setRequestHeader(k, headers[k]);
+        xhr.open("POST", target.upload_url);
+        xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+        xhr.setRequestHeader("x-goog-resumable", "start");
+        xhr.setRequestHeader(
+          "x-goog-meta-encrypted-organization-metadata",
+          target.encrypted_organization_metadata
+        );
+        if (target.file_extension) {
+          xhr.setRequestHeader("x-goog-meta-extension", target.file_extension);
+        }
+        xhr.onload = () => {
+          if (xhr.status < 200 || xhr.status >= 300) {
+            return reject(new Error(`GCS init failed (HTTP ${xhr.status})`));
+          }
+          const loc = xhr.getResponseHeader("Location");
+          if (!loc) {
+            return reject(
+              new Error("GCS session URL missing (bucket CORS must expose Location)")
+            );
+          }
+          resolve(loc);
+        };
+        xhr.onerror = () => reject(new Error("GCS init network error"));
+        xhr.send(null);
+      });
+    }
+    // Backblaze multipart: PUT each presigned part in order, aggregating
+    // progress across the whole file.
+    async _transferMultipart(file, target, row) {
+      const total = file.size;
+      let uploaded = 0;
+      const parts = target.parts.slice().sort((a, b) => a.part_number - b.part_number);
+      for (const part of parts) {
+        const start = (part.part_number - 1) * target.part_size;
+        const chunk = file.slice(start, Math.min(start + target.part_size, total));
+        await this._putXhr(
+          part.url,
+          chunk,
+          {},
+          (_pct, loaded) => this._progress(file, row, Math.round((uploaded + loaded) / total * 100))
+        );
+        uploaded += chunk.size;
+      }
+    }
+    _isHttps(url) {
+      try {
+        return new URL(url).protocol === "https:";
+      } catch (e) {
+        return false;
+      }
+    }
+    // One PUT with upload progress (XHR, not fetch, for progress events).
+    // onProgress receives (pct, loaded, total). Only storage-relevant headers
+    // are sent (allowlist), never an arbitrary set from an upstream response.
+    _putXhr(url, body, headers, onProgress) {
+      return new Promise((resolve, reject) => {
+        if (!this._isHttps(url)) return reject(new Error("Upload URL must be https"));
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", url);
+        Object.keys(headers || {}).forEach((k) => {
+          if (headers[k] != null && SAFE_UPLOAD_HEADER.test(k)) {
+            xhr.setRequestHeader(k, headers[k]);
+          }
         });
         xhr.upload.onprogress = (e) => {
-          if (!e.lengthComputable) return;
-          const pct = Math.round(e.loaded / e.total * 100);
-          row.fill.style.width = pct + "%";
-          row.status.textContent = pct + "%";
-          if (typeof this.config.onProgress === "function") {
-            this.config.onProgress(file, pct);
+          if (e.lengthComputable && typeof onProgress === "function") {
+            onProgress(Math.round(e.loaded / e.total * 100), e.loaded, e.total);
           }
         };
-        xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed (HTTP ${xhr.status})`));
+        xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve(xhr) : reject(new Error(`Upload failed (HTTP ${xhr.status})`));
         xhr.onerror = () => reject(new Error("Upload network error"));
-        xhr.send(file);
+        xhr.send(body);
       });
+    }
+    // Update the row UI + fire the onProgress hook.
+    _progress(file, row, pct) {
+      row.fill.style.width = pct + "%";
+      row.status.textContent = pct + "%";
+      if (typeof this.config.onProgress === "function") {
+        this.config.onProgress(file, pct);
+      }
     }
     _fail(row, file, err) {
       if (row) {

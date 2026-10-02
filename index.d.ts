@@ -341,31 +341,47 @@ declare module "playbook-sdk" {
 declare module "playbook-sdk/uploader" {
   import { Asset } from "playbook-sdk";
 
-  /** The one-time, signed upload target your backend returns to the browser. */
+  /**
+   * The `assets/upload_prepare` response `data` your backend returns to the
+   * browser. The SDK performs the transfer this describes (GCS resumable, or
+   * Backblaze single / multipart) — none of these values is secret.
+   */
   export interface UploadTarget {
-    /** Signed, single-use URL the bytes are sent to. */
-    uploadUrl: string;
-    /** HTTP method for the upload request (default "PUT"). */
-    method?: string;
-    /** Request headers (default `{ "Content-Type": file.type }`). */
-    headers?: { [key: string]: string };
-    /** Opaque data passed back to finishUpload (e.g. the signed GCS id). */
-    finalize?: any;
+    /** "gcs" (resumable POST+PUT) or "backblaze" (single PUT / multipart parts). */
+    storage_provider: "gcs" | "backblaze" | string;
+    /** Signed URL: GCS resumable-init (POST) or Backblaze single-part (PUT). Null for multipart. */
+    upload_url?: string | null;
+    /** Signed object id — passed back to upload_complete via finishUpload. */
+    signed_gcs_id: string;
+    /** Opaque metadata the storage headers must carry. */
+    encrypted_organization_metadata: string;
+    /** File extension derived from the title (may be null). */
+    file_extension?: string | null;
+    /** Present for Backblaze multipart (files >= 5MB). */
+    multipart_upload_id?: string | null;
+    /** Part size in bytes for multipart. */
+    part_size?: number | null;
+    /** Presigned part URLs for multipart. */
+    parts?: Array<{ part_number: number; url: string }> | null;
+    /** Passthrough fields (e.g. collection_token). */
+    [key: string]: any;
   }
 
   export interface UploaderConfig {
     /** ID of the container element the uploader renders into. */
     containerId?: string;
     /**
-     * REQUIRED. Returns a signed upload target minted by YOUR backend via
-     * Playbook's create_upload_url. Never return a write token to the browser.
+     * REQUIRED. Returns the upload_prepare response `data` from YOUR backend
+     * (which calls POST /v1/{org}/assets/upload_prepare). The write token stays
+     * on your server — never return it to the browser.
      */
     getUploadTarget: (file: File) => Promise<UploadTarget>;
     /**
-     * Called after the bytes land so your backend can call Playbook's
-     * finish_upload and return the created asset.
+     * Called after the bytes land. Your backend calls
+     * POST /v1/{org}/assets/upload_complete with the target's signed_gcs_id
+     * (+ multipart_upload_id) and returns the created asset.
      */
-    finishUpload?: (finalize: any, file: File) => Promise<Asset>;
+    finishUpload?: (target: UploadTarget, file: File) => Promise<Asset>;
     /** "dropzone" (full drag area, default) or "button" (compact trigger). */
     variant?: "dropzone" | "button";
     /** Accepted MIME types for the file input (default "image/*,video/*"). */
