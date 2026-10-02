@@ -24,6 +24,7 @@
       PlaybookUploader.init({
         containerId: "uploader",
 
+        // Your backend calls assets/upload_prepare and returns its `data`.
         getUploadTarget: async (file) => {
           const res = await fetch("/playbook/upload-target", {
             method: "POST",
@@ -34,15 +35,16 @@
               mediaType: file.type,
             }),
           });
-          if (!res.ok) throw new Error("could not get upload target");
-          return res.json(); // { uploadUrl, method, headers, finalize }
+          if (!res.ok) throw new Error("could not prepare upload");
+          return res.json(); // upload_prepare data (storage_provider, upload_url, …)
         },
 
-        finishUpload: async (finalize) => {
+        // After the transfer, your backend calls assets/upload_complete.
+        finishUpload: async (target) => {
           const res = await fetch("/playbook/finish-upload", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ finalize }),
+            body: JSON.stringify({ target }),
           });
           if (!res.ok) throw new Error("could not finish upload");
           return res.json(); // the created asset
