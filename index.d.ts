@@ -457,6 +457,159 @@ declare module "playbook-sdk/viewer" {
   export default PlaybookViewer;
 }
 
+declare module "playbook-sdk/picker" {
+  import { Asset } from "playbook-sdk";
+
+  export interface PickerOpenOptions {
+    /** Workspace slug. */
+    organizationSlug: string;
+    /** Async provider returning a short-lived access token. */
+    getAccessToken: () => string | Promise<string>;
+    /** Restrict the picker to one board. */
+    boardId?: string;
+    /** Assets per page (default 30). */
+    perPage?: number;
+    /** Allow selecting many assets (default true). */
+    multiple?: boolean;
+    title?: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    searchPlaceholder?: string;
+    /** Chosen assets (with token + URLs) when the user confirms. */
+    onSelect?: (assets: Asset[]) => void;
+    /** Called when the user cancels/dismisses. */
+    onCancel?: () => void;
+  }
+
+  export interface PlaybookPickerInterface {
+    version: string;
+    /** Open the picker modal. */
+    open(options: PickerOpenOptions): void;
+    /** Close the picker modal. */
+    close(): void;
+  }
+
+  const PlaybookPicker: PlaybookPickerInterface;
+  export default PlaybookPicker;
+}
+
+declare module "playbook-sdk/player" {
+  import { Asset } from "playbook-sdk";
+
+  export interface PlayerConfig {
+    /** DOM id of the mount container. */
+    containerId: string;
+    /** Asset to fetch + play. Omit if `src` is given. */
+    assetToken?: string;
+    organizationSlug?: string;
+    getAccessToken?: () => string | Promise<string>;
+    /** Direct media URL; bypasses the fetch (progressive or native HLS). */
+    src?: string;
+    poster?: string;
+    title?: string;
+    autoplay?: boolean;
+    muted?: boolean;
+    loop?: boolean;
+    controls?: boolean;
+    rounded?: boolean;
+    onReady?: (asset: Asset | null) => void;
+    onPlay?: () => void;
+    onError?: (error: Error) => void;
+  }
+
+  export interface PlayerInstance {
+    play(): void;
+    pause(): void;
+    destroy(): void;
+  }
+
+  export interface PlaybookPlayerInterface {
+    version: string;
+    init(config: PlayerConfig): PlayerInstance | null;
+    destroy(containerId: string): void;
+  }
+
+  const PlaybookPlayer: PlaybookPlayerInterface;
+  export default PlaybookPlayer;
+}
+
+declare module "playbook-sdk/embed" {
+  import { Asset } from "playbook-sdk";
+
+  export interface EmbedConfig {
+    /** DOM id of the mount container. */
+    containerId: string;
+    /** Asset to fetch + render. Omit if `src` is given. */
+    assetToken?: string;
+    organizationSlug?: string;
+    getAccessToken?: () => string | Promise<string>;
+    /** Direct media URL; bypasses the fetch (no auth needed). */
+    src?: string;
+    /** "image" | "video" | a MIME — only needed with a direct src. */
+    type?: string;
+    title?: string;
+    alt?: string;
+    /** Images open PlaybookViewer on click when it is present (default true). */
+    lightbox?: boolean;
+    rounded?: boolean;
+    onLoad?: (asset: Asset | null) => void;
+    onError?: (error: Error) => void;
+  }
+
+  export interface EmbedInstance {
+    destroy(): void;
+  }
+
+  export interface PlaybookEmbedInterface {
+    version: string;
+    init(config: EmbedConfig): EmbedInstance | null;
+    destroy(containerId: string): void;
+  }
+
+  const PlaybookEmbed: PlaybookEmbedInterface;
+  export default PlaybookEmbed;
+}
+
+declare module "playbook-sdk/search" {
+  import { Asset } from "playbook-sdk";
+
+  export interface SearchResultMeta {
+    query: string;
+    total: number;
+  }
+
+  export interface SearchConfig {
+    /** DOM id of the mount container (renders only an input). */
+    containerId: string;
+    organizationSlug: string;
+    getAccessToken: () => string | Promise<string>;
+    boardId?: string;
+    perPage?: number;
+    debounceMs?: number;
+    minChars?: number;
+    placeholder?: string;
+    /** Matches for your own result UI — this component renders no results. */
+    onResults: (assets: Asset[], meta: SearchResultMeta) => void;
+    onQuery?: (query: string) => void;
+    onError?: (error: Error) => void;
+  }
+
+  export interface SearchInstance {
+    /** Run a query programmatically. */
+    search(query: string): void;
+    destroy(): void;
+  }
+
+  export interface PlaybookSearchInterface {
+    version: string;
+    init(config: SearchConfig): SearchInstance | null;
+    destroy(containerId: string): void;
+  }
+
+  const PlaybookSearch: PlaybookSearchInterface;
+  export default PlaybookSearch;
+}
+
 /**
  * Global type declaration for browser script tag usage
  */
@@ -465,5 +618,9 @@ declare global {
     PlaybookSDK: import("playbook-sdk").PlaybookSDKInterface;
     PlaybookUploader: import("playbook-sdk/uploader").PlaybookUploaderInterface;
     PlaybookViewer: import("playbook-sdk/viewer").PlaybookViewerInterface;
+    PlaybookPicker: import("playbook-sdk/picker").PlaybookPickerInterface;
+    PlaybookPlayer: import("playbook-sdk/player").PlaybookPlayerInterface;
+    PlaybookEmbed: import("playbook-sdk/embed").PlaybookEmbedInterface;
+    PlaybookSearch: import("playbook-sdk/search").PlaybookSearchInterface;
   }
 }
