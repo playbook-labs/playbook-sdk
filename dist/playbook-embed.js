@@ -44,11 +44,7 @@
     const mt = a.media_type || a.type || "";
     return mt.indexOf("video") === 0 || mt === "video" || /\.(mp4|webm|ogg|mov|m3u8)$/i.test(fullUrlOf(a));
   };
-  const escapeHtml = (s) => {
-    const d = document.createElement("div");
-    d.textContent = String(s == null ? "" : s);
-    return d.innerHTML;
-  };
+  const escapeHtml = (s) => (s == null ? "" : String(s)).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   const PlaybookEmbed = {
     version: "1.0.4",
     instances: {},

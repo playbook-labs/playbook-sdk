@@ -62,11 +62,15 @@
   const thumbOf = (a) => a.thumbnail_url || a.display_url || a.url || "";
   const titleOf = (a) => a.title || a.name || "Asset";
   const keyOf = (a) => a.token || a.id;
-  const escapeHtml = (s) => {
-    const d = document.createElement("div");
-    d.textContent = String(s == null ? "" : s);
-    return d.innerHTML;
-  };
+  // Quote-aware so values are safe in both text and quoted-attribute contexts
+  // (prevents attribute breakout, e.g. an asset title containing ").
+  const escapeHtml = (s) =>
+    (s == null ? "" : String(s))
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
 
   const PlaybookPicker = {
     version: __PB_VERSION__,
@@ -192,7 +196,7 @@
         if (query) params.append("query", query);
         const url =
           this.config.boardId && this.config.boardId !== "all"
-            ? `${this.apiBaseUrl}/boards/${this.config.boardId}/assets?${params}`
+            ? `${this.apiBaseUrl}/boards/${encodeURIComponent(this.config.boardId)}/assets?${params}`
             : `${this.apiBaseUrl}/assets?${params}`;
         const res = await this._authedFetch(url, { signal: this._abort.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);

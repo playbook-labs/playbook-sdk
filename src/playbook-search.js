@@ -193,7 +193,7 @@
         if (query) params.append("query", query);
         const url =
           this.config.boardId && this.config.boardId !== "all"
-            ? `${this.apiBaseUrl}/boards/${this.config.boardId}/assets?${params}`
+            ? `${this.apiBaseUrl}/boards/${encodeURIComponent(this.config.boardId)}/assets?${params}`
             : `${this.apiBaseUrl}/assets?${params}`;
         const res = await this._authedFetch(url, { signal: this._abort.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
