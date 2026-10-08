@@ -1,11 +1,11 @@
-/*! Playbook Viewer SDK v1.0.4 | MIT License | https://github.com/playbook-labs/playbook-sdk */
+/*! Playbook Viewer SDK v1.1.0 | MIT License | https://github.com/playbook-labs/playbook-sdk */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = global || self, global.PlaybookViewer = factory());
 })(this, function() {
   "use strict";
   const STYLE_ID = "__playbook-viewer-styles";
   const PlaybookViewer = {
-    version: "1.0.4",
+    version: "1.1.0",
     _overlay: null,
     _items: [],
     _index: 0,
