@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Playbook Picker, Player, Embed and Search - Example</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-gray-100 p-8">
+    <div class="max-w-2xl mx-auto space-y-10">
+      <h1 class="text-3xl font-bold text-center">Playbook components</h1>
+
+      <section>
+        <h2 class="text-xl font-semibold mb-3">Media picker</h2>
+        <button id="insert" class="px-4 py-2 rounded-lg bg-black text-white">Insert from library</button>
+        <ul id="picked" class="mt-3 text-sm text-gray-700"></ul>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-semibold mb-3">Inline video player</h2>
+        <div id="player"></div>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-semibold mb-3">Single asset embed</h2>
+        <div id="embed"></div>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-semibold mb-3">Headless search</h2>
+        <div id="search"></div>
+        <p id="summary" class="mt-3 text-sm text-gray-500"></p>
+        <ul id="results" class="mt-1 text-sm text-gray-700"></ul>
+      </section>
+    </div>
+
+    <!-- Include SDKs (the viewer gives the embed its click-to-zoom lightbox) -->
+    <script src="../dist/playbook-viewer.min.js"></script>
+    <script src="../dist/playbook-picker.min.js"></script>
+    <script src="../dist/playbook-player.min.js"></script>
+    <script src="../dist/playbook-embed.min.js"></script>
+    <script src="../dist/playbook-search.min.js"></script>
+
+    <script>
+      const organizationSlug = "your-org-slug";
+
+      // Your backend mints a short-lived, read-only token
+      // (see examples/backend/token-server.mjs). Never ship a long-lived one.
+      const getAccessToken = async () => {
+        const res = await fetch("/playbook/token");
+        if (!res.ok) throw new Error("could not get a token");
+        return (await res.json()).token;
+      };
+
+      // Asset titles are untrusted, so they are set with textContent.
+      const list = (id, assets) => {
+        const items = assets.map((asset) => {
+          const li = document.createElement("li");
+          li.textContent = asset.title || asset.token;
+          return li;
+        });
+        document.getElementById(id).replaceChildren(...items);
+      };
+
+      document.getElementById("insert").addEventListener("click", () => {
+        PlaybookPicker.open({
+          organizationSlug,
+          getAccessToken,
+          onSelect: (assets) => list("picked", assets),
+        });
+      });
+
+      PlaybookPlayer.init({
+        containerId: "player",
+        assetToken: "your-video-asset-token",
+        organizationSlug,
+        getAccessToken,
+        onError: (err) => console.error(err),
+      });
+
+      PlaybookEmbed.init({
+        containerId: "embed",
+        assetToken: "your-image-asset-token",
+        organizationSlug,
+        getAccessToken,
+        onError: (err) => console.error(err),
+      });
+
+      PlaybookSearch.init({
+        containerId: "search",
+        organizationSlug,
+        getAccessToken,
+        onResults: (assets, { query, total }) => {
+          document.getElementById("summary").textContent = query ? `${total} results for "${query}"` : "";
+          list("results", assets);
+        },
+        onError: (err) => console.error(err),
+      });
+    </script>
+  </body>
+</html>
