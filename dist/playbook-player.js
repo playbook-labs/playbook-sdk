@@ -5,41 +5,45 @@
   "use strict";
   const STYLE_ID = "__playbook-player-styles";
   function makeAuthedFetch(getAccessToken) {
-    let token, resolved = false, pending = null;
-    const resolve = (force) => {
-      if (force) resolved = false;
-      if (resolved) return Promise.resolve(token);
-      if (!pending) {
-        pending = Promise.resolve(
-          typeof getAccessToken === "function" ? getAccessToken() : null
-        ).then(
-          (t) => {
-            token = t;
-            resolved = true;
-            pending = null;
-            return t;
+    let accessToken = null, tokenPromise = null;
+    const resolveToken = (rejectedToken) => {
+      if (rejectedToken && rejectedToken === accessToken) accessToken = null;
+      if (accessToken) return Promise.resolve(accessToken);
+      if (!tokenPromise) {
+        tokenPromise = Promise.resolve(getAccessToken()).then(
+          (token) => {
+            tokenPromise = null;
+            if (typeof token !== "string" || !token) {
+              throw new Error("`getAccessToken` must return a non-empty string");
+            }
+            accessToken = token;
+            return token;
           },
-          (e) => {
-            pending = null;
-            throw e;
+          (err) => {
+            tokenPromise = null;
+            throw err;
           }
         );
       }
-      return pending;
+      return tokenPromise;
     };
     return async function authedFetch(url, opts = {}) {
-      const send = async (force) => {
-        const t = await resolve(force);
-        const headers = { "Content-Type": "application/json", ...opts.headers || {} };
-        if (t) headers["Authorization"] = "Bearer " + t;
-        return fetch(url, { ...opts, headers });
+      const send = async (rejectedToken) => {
+        const token = await resolveToken(rejectedToken);
+        const headers = {
+          "Content-Type": "application/json",
+          ...opts.headers || {},
+          Authorization: `Bearer ${token}`
+        };
+        return { token, response: await fetch(url, { ...opts, headers }) };
       };
-      const res = await send(false);
-      return res.status === 401 ? send(true) : res;
+      const first = await send();
+      if (first.response.status !== 401) return first.response;
+      return (await send(first.token)).response;
     };
   }
-  const fullUrlOf = (a) => a.display_url || a.url || a.thumbnail_url || "";
   const titleOf = (a) => a.title || a.name || "Video";
+  const canPlayHls = () => document.createElement("video").canPlayType("application/vnd.apple.mpegurl") !== "";
   const PlaybookPlayer = {
     version: "1.1.0",
     instances: {},
@@ -138,35 +142,49 @@
       if (settings.assetToken && !settings.src) {
         this._authedFetch = makeAuthedFetch(settings.getAccessToken);
       }
+      this._abort = new AbortController();
+      this._destroyed = false;
       this.container.classList.add("pb-player");
       if (settings.rounded) this.container.classList.add("pb-player--rounded");
       this._start();
     }
     async _start() {
       if (this.config.src) {
-        this._mount({ src: this.config.src, poster: this.config.poster, title: this.config.title });
-        if (this.config.onReady) this.config.onReady(null);
+        this._mount(
+          { src: this.config.src, poster: this.config.poster, title: this.config.title },
+          null
+        );
         return;
       }
       this.container.innerHTML = '<div class="pb-player-loading">Loading\u2026</div>';
       try {
-        const res = await this._authedFetch(
-          `${this.apiBaseUrl}/assets/${encodeURIComponent(this.config.assetToken)}`
-        );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        const asset = data.data || data.asset || data;
-        const src = fullUrlOf(asset);
+        const path = `/assets/${encodeURIComponent(this.config.assetToken)}`;
+        const asset = await this._getJson(path);
+        const src = asset.stream_url && canPlayHls() ? asset.stream_url : (await this._getJson(`${path}/download`)).raw_url;
+        if (this._destroyed) return;
         if (!src) throw new Error("Asset has no playable URL");
-        this._mount({ src, poster: asset.thumbnail_url || "", title: titleOf(asset) });
-        if (this.config.onReady) this.config.onReady(asset);
+        this._mount(
+          { src, poster: asset.display_url || asset.thumbnail_url || "", title: titleOf(asset) },
+          asset
+        );
       } catch (err) {
-        console.error("Playbook Player: failed to load asset -", err.message || err);
-        this.container.innerHTML = '<div class="pb-player-error">Could not load video.</div>';
-        if (this.config.onError) this.config.onError(err);
+        this._fail(err);
       }
     }
-    _mount(media) {
+    async _getJson(path) {
+      const res = await this._authedFetch(this.apiBaseUrl + path, { signal: this._abort.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return data.data || data.asset || data;
+    }
+    _fail(err) {
+      if (this._destroyed) return;
+      console.error("Playbook Player: failed to load video -", err.message || err);
+      this.video = null;
+      this.container.innerHTML = '<div class="pb-player-error">Could not load video.</div>';
+      if (this.config.onError) this.config.onError(err);
+    }
+    _mount(media, asset) {
       this.container.innerHTML = "";
       const video = document.createElement("video");
       video.className = "pb-player-video";
@@ -184,13 +202,30 @@
         if (this._poster) this._poster.remove();
         if (this.config.onPlay) this.config.onPlay();
       });
+      video.addEventListener(
+        "loadedmetadata",
+        () => {
+          if (this.config.onReady) this.config.onReady(asset);
+        },
+        { once: true }
+      );
+      video.addEventListener("error", () => {
+        if (this.video === video) this._fail(new Error("Video failed to load"));
+      });
       if (this.config.autoplay) {
         video.autoplay = true;
         const p = video.play();
-        if (p && p.catch) p.catch(() => {
-        });
+        if (p && p.catch) {
+          p.catch(() => {
+            if (!this._destroyed && this.video === video && video.paused) this._addOverlay(media);
+          });
+        }
         return;
       }
+      this._addOverlay(media);
+    }
+    // Poster + play overlay until first play (keeps it quiet on load).
+    _addOverlay(media) {
       if (media.poster) {
         const poster = document.createElement("img");
         poster.className = "pb-player-poster";
@@ -219,6 +254,8 @@
       if (this.video) this.video.pause();
     }
     destroy() {
+      this._destroyed = true;
+      this._abort.abort();
       if (this.video) {
         try {
           this.video.pause();

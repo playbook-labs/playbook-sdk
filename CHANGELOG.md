@@ -14,6 +14,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one call to it.
 - `examples/backend/token-server.mjs`, a dependency-free server that exchanges
   an API token for a short-lived, read-only, single-board token.
+- Four components, each its own bundle: a media picker (`PlaybookPicker`), an
+  inline video player (`PlaybookPlayer`), a single asset embed
+  (`PlaybookEmbed`) and a headless search box (`PlaybookSearch`). See
+  [docs/components.md](docs/components.md).
+- `package.json` exports for every bundle: `playbook-sdk/uploader`, `/viewer`,
+  `/picker`, `/player`, `/embed` and `/search`.
 
 ### Deprecated
 

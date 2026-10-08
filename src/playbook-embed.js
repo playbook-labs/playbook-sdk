@@ -22,60 +22,59 @@
 
   const STYLE_ID = "__playbook-embed-styles";
 
+  // Short-lived token provider + bearer-injecting fetch with one 401 retry —
+  // the gallery's _resolveToken/_authedFetch. Each bundle carries its own copy
+  // (the build does not bundle shared modules).
   function makeAuthedFetch(getAccessToken) {
-    let token,
-      resolved = false,
-      pending = null;
-    const resolve = (force) => {
-      if (force) resolved = false;
-      if (resolved) return Promise.resolve(token);
-      if (!pending) {
-        pending = Promise.resolve(
-          typeof getAccessToken === "function" ? getAccessToken() : null
-        ).then(
-          (t) => {
-            token = t;
-            resolved = true;
-            pending = null;
-            return t;
+    let accessToken = null, // kept in memory only
+      tokenPromise = null; // provider call in flight, shared by concurrent requests
+    // rejectedToken is the token a request just got a 401 with: it is dropped
+    // only if it is still the cached one, so requests that fail together share
+    // one refresh.
+    const resolveToken = (rejectedToken) => {
+      if (rejectedToken && rejectedToken === accessToken) accessToken = null;
+      if (accessToken) return Promise.resolve(accessToken);
+      if (!tokenPromise) {
+        tokenPromise = Promise.resolve(getAccessToken()).then(
+          (token) => {
+            tokenPromise = null;
+            // Never send "Bearer undefined" or "Bearer [object Object]".
+            if (typeof token !== "string" || !token) {
+              throw new Error("`getAccessToken` must return a non-empty string");
+            }
+            accessToken = token;
+            return token;
           },
-          (e) => {
-            pending = null;
-            throw e;
+          (err) => {
+            tokenPromise = null;
+            throw err;
           }
         );
       }
-      return pending;
+      return tokenPromise;
     };
     return async function authedFetch(url, opts = {}) {
-      const send = async (force) => {
-        const t = await resolve(force);
-        const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
-        if (t) headers["Authorization"] = "Bearer " + t;
-        return fetch(url, { ...opts, headers });
+      const send = async (rejectedToken) => {
+        const token = await resolveToken(rejectedToken);
+        const headers = {
+          "Content-Type": "application/json",
+          ...(opts.headers || {}),
+          Authorization: `Bearer ${token}`,
+        };
+        return { token, response: await fetch(url, { ...opts, headers }) };
       };
-      const res = await send(false);
-      return res.status === 401 ? send(true) : res;
+      const first = await send();
+      if (first.response.status !== 401) return first.response;
+      return (await send(first.token)).response;
     };
   }
 
-  const fullUrlOf = (a) => a.display_url || a.url || a.thumbnail_url || "";
   const titleOf = (a) => a.title || a.name || "Asset";
-  const isVideoAsset = (a) => {
-    const mt = a.media_type || a.type || "";
-    return (
-      mt.indexOf("video") === 0 || mt === "video" || /\.(mp4|webm|ogg|mov|m3u8)$/i.test(fullUrlOf(a))
-    );
-  };
-  // Quote-aware (safe in quoted-attribute contexts). Currently unused — embed
-  // renders via DOM properties — but kept correct so a future HTML sink is safe.
-  const escapeHtml = (s) =>
-    (s == null ? "" : String(s))
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
+  // By type ("video", "video/mp4") or by extension; signed URLs carry a query.
+  const isVideo = (type, url) =>
+    (type || "").indexOf("video") === 0 || /\.(mp4|webm|ogg|mov|m3u8)(?:[?#]|$)/i.test(url || "");
+  const canPlayHls = () =>
+    document.createElement("video").canPlayType("application/vnd.apple.mpegurl") !== "";
 
   const PlaybookEmbed = {
     version: __PB_VERSION__,
@@ -167,6 +166,8 @@
       if (settings.assetToken && !settings.src) {
         this._authedFetch = makeAuthedFetch(settings.getAccessToken);
       }
+      this._abort = new AbortController();
+      this._destroyed = false;
       this.container.classList.add("pb-embed");
       if (settings.rounded) this.container.classList.add("pb-embed--rounded");
       this._start();
@@ -174,64 +175,102 @@
 
     async _start() {
       if (this.config.src) {
-        this._renderMedia({
-          src: this.config.src,
-          title: this.config.title,
-          media_type: this.config.type,
-        });
-        if (this.config.onLoad) this.config.onLoad(null);
+        this._renderMedia(
+          {
+            src: this.config.src,
+            title: this.config.title,
+            video: isVideo(this.config.type, this.config.src),
+          },
+          null
+        );
         return;
       }
       this.container.innerHTML = '<div class="pb-embed-loading">Loading…</div>';
       try {
-        const res = await this._authedFetch(
-          `${this.apiBaseUrl}/assets/${encodeURIComponent(this.config.assetToken)}`
+        const path = `/assets/${encodeURIComponent(this.config.assetToken)}`;
+        const asset = await this._getJson(path);
+        const video = isVideo(asset.media_type || asset.type, asset.display_url || asset.url);
+        let src;
+        let poster = "";
+        if (video) {
+          // For a video the API's display_url is the poster, not the video. The
+          // playable sources are stream_url (HLS, null until the encode
+          // finishes) and the original file's raw_url.
+          src =
+            asset.stream_url && canPlayHls()
+              ? asset.stream_url
+              : (await this._getJson(`${path}/download`)).raw_url;
+          poster = asset.display_url || asset.thumbnail_url || "";
+        } else {
+          src = asset.display_url || asset.url || asset.thumbnail_url;
+        }
+        if (this._destroyed) return;
+        if (!src) throw new Error("Asset has no displayable URL");
+        this._renderMedia(
+          { src: src, poster: poster, title: this.config.title || titleOf(asset), video: video },
+          asset
         );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        const asset = data.data || data.asset || data;
-        if (!asset || !fullUrlOf(asset)) throw new Error("Asset has no displayable URL");
-        this._renderMedia(asset);
-        if (this.config.onLoad) this.config.onLoad(asset);
       } catch (err) {
-        console.error("Playbook Embed: failed to load asset -", err.message || err);
-        this.container.innerHTML = '<div class="pb-embed-error">Could not load asset.</div>';
-        if (this.config.onError) this.config.onError(err);
+        this._fail(err);
       }
     }
 
-    _renderMedia(asset) {
-      const src = fullUrlOf(asset) || asset.src;
-      const title = this.config.title || titleOf(asset);
-      const video = isVideoAsset(asset);
+    async _getJson(path) {
+      const res = await this._authedFetch(this.apiBaseUrl + path, { signal: this._abort.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return data.data || data.asset || data;
+    }
+
+    _fail(err) {
+      if (this._destroyed) return;
+      console.error("Playbook Embed: failed to load asset -", err.message || err);
+      this.container.innerHTML = '<div class="pb-embed-error">Could not load asset.</div>';
+      if (this.config.onError) this.config.onError(err);
+    }
+
+    _renderMedia(media, asset) {
       this.container.innerHTML = "";
 
       let el;
-      if (video) {
+      if (media.video) {
         el = document.createElement("video");
         el.controls = true;
         el.playsInline = true;
         el.preload = "metadata";
-        if (asset.thumbnail_url) el.poster = asset.thumbnail_url;
+        if (media.poster) el.poster = media.poster;
       } else {
         el = document.createElement("img");
-        el.alt = this.config.alt || title;
+        el.alt = this.config.alt || media.title || "";
         el.loading = "lazy";
       }
-      el.src = src;
+      el.addEventListener(
+        media.video ? "loadedmetadata" : "load",
+        () => {
+          if (this.config.onLoad) this.config.onLoad(asset);
+        },
+        { once: true }
+      );
+      el.addEventListener("error", () => this._fail(new Error("Media failed to load")));
+      el.src = media.src;
       el.className = "pb-embed-media";
       this.container.appendChild(el);
 
-      // Images can open the lightbox; video has its own controls.
-      if (!video && this.config.lightbox && typeof window !== "undefined" && window.PlaybookViewer) {
-        this.container.classList.add("pb-embed--clickable");
-        this._onClick = () =>
-          window.PlaybookViewer.open({ src: src, type: "image", title: title });
-        el.addEventListener("click", this._onClick);
+      // Images can open the lightbox; video has its own controls. The viewer
+      // is looked up on click, so loading its script later still works.
+      if (!media.video && this.config.lightbox && typeof window !== "undefined") {
+        if (window.PlaybookViewer) this.container.classList.add("pb-embed--clickable");
+        el.addEventListener("click", () => {
+          if (window.PlaybookViewer) {
+            window.PlaybookViewer.open({ src: media.src, type: "image", title: media.title });
+          }
+        });
       }
     }
 
     destroy() {
+      this._destroyed = true;
+      this._abort.abort();
       this.container.innerHTML = "";
       this.container.classList.remove("pb-embed", "pb-embed--rounded", "pb-embed--clickable");
     }

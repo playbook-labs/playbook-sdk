@@ -465,9 +465,9 @@ declare module "playbook-sdk/picker" {
     organizationSlug: string;
     /** Async provider returning a short-lived access token. */
     getAccessToken: () => string | Promise<string>;
-    /** Restrict the picker to one board. */
+    /** Restrict the picker to one board (and its sub-boards). */
     boardId?: string;
-    /** Assets per page (default 30). */
+    /** Assets per page (default 30); "Load more" fetches the next page. */
     perPage?: number;
     /** Allow selecting many assets (default true). */
     multiple?: boolean;
@@ -475,6 +475,7 @@ declare module "playbook-sdk/picker" {
     confirmLabel?: string;
     cancelLabel?: string;
     searchPlaceholder?: string;
+    loadMoreLabel?: string;
     /** Chosen assets (with token + URLs) when the user confirms. */
     onSelect?: (assets: Asset[]) => void;
     /** Called when the user cancels/dismisses. */
@@ -499,7 +500,11 @@ declare module "playbook-sdk/player" {
   export interface PlayerConfig {
     /** DOM id of the mount container. */
     containerId: string;
-    /** Asset to fetch + play. Omit if `src` is given. */
+    /**
+     * Asset to fetch + play. Omit if `src` is given. Plays the asset's HLS
+     * `stream_url` where the browser supports HLS natively, otherwise the
+     * original file (which needs download permission on the asset).
+     */
     assetToken?: string;
     organizationSlug?: string;
     getAccessToken?: () => string | Promise<string>;
@@ -507,13 +512,16 @@ declare module "playbook-sdk/player" {
     src?: string;
     poster?: string;
     title?: string;
+    /** If the browser blocks autoplay, the play overlay is shown instead. */
     autoplay?: boolean;
     muted?: boolean;
     loop?: boolean;
     controls?: boolean;
     rounded?: boolean;
+    /** Fires once the video's metadata has loaded (`null` with a direct src). */
     onReady?: (asset: Asset | null) => void;
     onPlay?: () => void;
+    /** The asset request failed, or the video itself failed to load. */
     onError?: (error: Error) => void;
   }
 
@@ -545,14 +553,19 @@ declare module "playbook-sdk/embed" {
     getAccessToken?: () => string | Promise<string>;
     /** Direct media URL; bypasses the fetch (no auth needed). */
     src?: string;
-    /** "image" | "video" | a MIME — only needed with a direct src. */
+    /**
+     * "image" | "video" | a MIME. Only for a direct src whose URL has no
+     * video extension (.mp4, .webm, .ogg, .mov, .m3u8) to detect it by.
+     */
     type?: string;
     title?: string;
     alt?: string;
     /** Images open PlaybookViewer on click when it is present (default true). */
     lightbox?: boolean;
     rounded?: boolean;
+    /** Fires once the image, or the video's metadata, has loaded. */
     onLoad?: (asset: Asset | null) => void;
+    /** The asset request failed, or the media itself failed to load. */
     onError?: (error: Error) => void;
   }
 
@@ -575,7 +588,10 @@ declare module "playbook-sdk/search" {
 
   export interface SearchResultMeta {
     query: string;
+    /** Matches across all pages. */
     total: number;
+    page: number;
+    totalPages: number;
   }
 
   export interface SearchConfig {
@@ -583,6 +599,7 @@ declare module "playbook-sdk/search" {
     containerId: string;
     organizationSlug: string;
     getAccessToken: () => string | Promise<string>;
+    /** Restrict the search to one board (and its sub-boards). */
     boardId?: string;
     perPage?: number;
     debounceMs?: number;
@@ -595,8 +612,8 @@ declare module "playbook-sdk/search" {
   }
 
   export interface SearchInstance {
-    /** Run a query programmatically. */
-    search(query: string): void;
+    /** Run a query programmatically; pass `page` to fetch a later page. */
+    search(query: string, page?: number): Promise<void>;
     destroy(): void;
   }
 

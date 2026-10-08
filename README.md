@@ -432,6 +432,12 @@ Modal controls:
 - `→` Next asset
 - `Esc` Close modal
 
+## More Components
+
+The package also ships a media picker, an inline video player, a single asset
+embed and a headless search box, each as its own bundle. See
+[docs/components.md](docs/components.md).
+
 ## Browser Support
 
 - Chrome/Edge (latest)

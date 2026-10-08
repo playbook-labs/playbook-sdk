@@ -5,37 +5,41 @@
   "use strict";
   const STYLE_ID = "__playbook-picker-styles";
   function makeAuthedFetch(getAccessToken) {
-    let token, resolved = false, pending = null;
-    const resolve = (force) => {
-      if (force) resolved = false;
-      if (resolved) return Promise.resolve(token);
-      if (!pending) {
-        pending = Promise.resolve(
-          typeof getAccessToken === "function" ? getAccessToken() : null
-        ).then(
-          (t) => {
-            token = t;
-            resolved = true;
-            pending = null;
-            return t;
+    let accessToken = null, tokenPromise = null;
+    const resolveToken = (rejectedToken) => {
+      if (rejectedToken && rejectedToken === accessToken) accessToken = null;
+      if (accessToken) return Promise.resolve(accessToken);
+      if (!tokenPromise) {
+        tokenPromise = Promise.resolve(getAccessToken()).then(
+          (token) => {
+            tokenPromise = null;
+            if (typeof token !== "string" || !token) {
+              throw new Error("`getAccessToken` must return a non-empty string");
+            }
+            accessToken = token;
+            return token;
           },
-          (e) => {
-            pending = null;
-            throw e;
+          (err) => {
+            tokenPromise = null;
+            throw err;
           }
         );
       }
-      return pending;
+      return tokenPromise;
     };
     return async function authedFetch(url, opts = {}) {
-      const send = async (force) => {
-        const t = await resolve(force);
-        const headers = { "Content-Type": "application/json", ...opts.headers || {} };
-        if (t) headers["Authorization"] = "Bearer " + t;
-        return fetch(url, { ...opts, headers });
+      const send = async (rejectedToken) => {
+        const token = await resolveToken(rejectedToken);
+        const headers = {
+          "Content-Type": "application/json",
+          ...opts.headers || {},
+          Authorization: `Bearer ${token}`
+        };
+        return { token, response: await fetch(url, { ...opts, headers }) };
       };
-      const res = await send(false);
-      return res.status === 401 ? send(true) : res;
+      const first = await send();
+      if (first.response.status !== 401) return first.response;
+      return (await send(first.token)).response;
     };
   }
   const thumbOf = (a) => a.thumbnail_url || a.display_url || a.url || "";
@@ -65,6 +69,7 @@
         confirmLabel: "Select",
         cancelLabel: "Cancel",
         searchPlaceholder: "Search the library\u2026",
+        loadMoreLabel: "Load more",
         onSelect: null,
         // (assets) => void
         onCancel: null,
@@ -75,7 +80,11 @@
       this._authedFetch = makeAuthedFetch(this.config.getAccessToken);
       this._selected = /* @__PURE__ */ new Map();
       this._assets = [];
+      this._query = "";
+      this._page = 1;
+      this._hasMore = false;
       this._abort = null;
+      this._boardToken = null;
       this._timer = null;
       this._injectStyles();
       this._mount();
@@ -123,33 +132,62 @@
       this._overlay = overlay;
       this._updateFooter();
     },
-    async _fetch(query) {
+    // The search filter takes a board token and boardId may be a numeric id,
+    // so look the board up once (the gallery does the same for its root board).
+    _resolveBoardToken: function() {
+      if (!this._boardToken) {
+        const boardId = this.config.boardId;
+        this._boardToken = this._authedFetch(
+          `${this.apiBaseUrl}/boards/${encodeURIComponent(boardId)}`
+        ).then((res) => res.ok ? res.json() : {}).then((data) => (data.data || data.board || data).token || boardId).catch(() => boardId);
+      }
+      return this._boardToken;
+    },
+    // page > 1 appends to the grid ("Load more"); page 1 replaces it.
+    async _fetch(query, page = 1) {
       if (!this._overlay) return;
       const grid = this._overlay.querySelector(".pb-picker-grid");
-      grid.innerHTML = '<div class="pb-picker-note">Loading\u2026</div>';
+      const append = page > 1;
+      if (!append) grid.innerHTML = '<div class="pb-picker-note">Loading\u2026</div>';
       if (this._abort) this._abort.abort();
-      this._abort = new AbortController();
+      const abort = this._abort = new AbortController();
       try {
+        const boardId = this.config.boardId && this.config.boardId !== "all" ? this.config.boardId : "";
         const params = new URLSearchParams({
-          nested_assets: "true",
-          page: "1",
-          per_page: this.config.perPage.toString()
+          page: page.toString(),
+          per_page: (this.config.perPage || 30).toString()
         });
-        if (query) params.append("query", query);
-        const url = this.config.boardId && this.config.boardId !== "all" ? `${this.apiBaseUrl}/boards/${encodeURIComponent(this.config.boardId)}/assets?${params}` : `${this.apiBaseUrl}/assets?${params}`;
-        const res = await this._authedFetch(url, { signal: this._abort.signal });
+        let url;
+        if (query) {
+          params.append("query", query);
+          if (boardId) {
+            params.append("filters[recursive_boards][]", await this._resolveBoardToken());
+          }
+          url = `${this.apiBaseUrl}/search?${params}`;
+        } else {
+          params.append("nested_assets", "true");
+          url = boardId ? `${this.apiBaseUrl}/boards/${encodeURIComponent(boardId)}/assets?${params}` : `${this.apiBaseUrl}/assets?${params}`;
+        }
+        const res = await this._authedFetch(url, { signal: abort.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        this._assets = (data.data || data.assets || []).filter(
+        if (abort.signal.aborted) return;
+        const assets = (data.data || data.assets || []).filter(
           (a) => a.collection_type !== "board"
         );
+        const pagy = data.pagy || {};
+        this._assets = append ? this._assets.concat(assets) : assets;
+        this._query = query;
+        this._page = pagy.current_page || page;
+        this._hasMore = this._page < (pagy.total_pages || 1);
         this._renderGrid();
       } catch (err) {
-        if (err.name === "AbortError") return;
+        if (err.name === "AbortError" || abort.signal.aborted) return;
         console.error("Playbook Picker: failed to load assets -", err.message || err);
-        grid.innerHTML = '<div class="pb-picker-note">Could not load assets.</div>';
+        if (append) this._renderGrid();
+        else grid.innerHTML = '<div class="pb-picker-note">Could not load assets.</div>';
       } finally {
-        this._abort = null;
+        if (this._abort === abort) this._abort = null;
       }
     },
     _renderGrid: function() {
@@ -163,10 +201,17 @@
         const thumb = thumbOf(a);
         const img = thumb ? `<img src="${escapeHtml(thumb)}" alt="${escapeHtml(titleOf(a))}" loading="lazy">` : `<span class="pb-picker-noimg">${escapeHtml(titleOf(a))}</span>`;
         return `<button class="pb-picker-cell${sel}" data-i="${i}" title="${escapeHtml(titleOf(a))}">` + img + '<span class="pb-picker-check" aria-hidden="true">&#10003;</span></button>';
-      }).join("");
+      }).join("") + (this._hasMore ? `<button class="pb-picker-btn pb-picker-more">${escapeHtml(this.config.loadMoreLabel)}</button>` : "");
       grid.querySelectorAll(".pb-picker-cell").forEach((cell) => {
         cell.addEventListener("click", () => this._toggle(Number(cell.dataset.i), cell));
       });
+      const more = this._hasMore && grid.querySelector(".pb-picker-more");
+      if (more) {
+        more.addEventListener("click", () => {
+          more.disabled = true;
+          this._fetch(this._query, this._page + 1);
+        });
+      }
     },
     _toggle: function(i, cell) {
       const asset = this._assets[i];
@@ -268,6 +313,8 @@
         .pb-picker-cancel:hover { background: rgba(0,0,0,0.04); }
         .pb-picker-confirm { background: #ff2753; border-color: #ff2753; color: #fff; }
         .pb-picker-confirm:disabled { opacity: 0.45; cursor: not-allowed; }
+        .pb-picker-more { grid-column: 1 / -1; justify-self: center; }
+        .pb-picker-more:disabled { opacity: 0.45; cursor: default; }
         html[data-theme="dark"] .pb-picker-dialog { background: #15171c; color: #e6e8ec; }
         html[data-theme="dark"] .pb-picker-head, html[data-theme="dark"] .pb-picker-foot { border-color: rgba(255,255,255,0.1); }
         html[data-theme="dark"] .pb-picker-search { background: #0f1115; border-color: rgba(255,255,255,0.14); color: #e6e8ec; }

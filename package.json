@@ -13,6 +13,30 @@
     ".": {
       "types": "./index.d.ts",
       "default": "./dist/playbook-sdk.min.js"
+    },
+    "./uploader": {
+      "types": "./index.d.ts",
+      "default": "./dist/playbook-uploader.min.js"
+    },
+    "./viewer": {
+      "types": "./index.d.ts",
+      "default": "./dist/playbook-viewer.min.js"
+    },
+    "./picker": {
+      "types": "./index.d.ts",
+      "default": "./dist/playbook-picker.min.js"
+    },
+    "./player": {
+      "types": "./index.d.ts",
+      "default": "./dist/playbook-player.min.js"
+    },
+    "./embed": {
+      "types": "./index.d.ts",
+      "default": "./dist/playbook-embed.min.js"
+    },
+    "./search": {
+      "types": "./index.d.ts",
+      "default": "./dist/playbook-search.min.js"
     }
   },
   "files": [

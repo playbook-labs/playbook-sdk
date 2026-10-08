@@ -5,37 +5,41 @@
   "use strict";
   const STYLE_ID = "__playbook-search-styles";
   function makeAuthedFetch(getAccessToken) {
-    let token, resolved = false, pending = null;
-    const resolve = (force) => {
-      if (force) resolved = false;
-      if (resolved) return Promise.resolve(token);
-      if (!pending) {
-        pending = Promise.resolve(
-          typeof getAccessToken === "function" ? getAccessToken() : null
-        ).then(
-          (t) => {
-            token = t;
-            resolved = true;
-            pending = null;
-            return t;
+    let accessToken = null, tokenPromise = null;
+    const resolveToken = (rejectedToken) => {
+      if (rejectedToken && rejectedToken === accessToken) accessToken = null;
+      if (accessToken) return Promise.resolve(accessToken);
+      if (!tokenPromise) {
+        tokenPromise = Promise.resolve(getAccessToken()).then(
+          (token) => {
+            tokenPromise = null;
+            if (typeof token !== "string" || !token) {
+              throw new Error("`getAccessToken` must return a non-empty string");
+            }
+            accessToken = token;
+            return token;
           },
-          (e) => {
-            pending = null;
-            throw e;
+          (err) => {
+            tokenPromise = null;
+            throw err;
           }
         );
       }
-      return pending;
+      return tokenPromise;
     };
     return async function authedFetch(url, opts = {}) {
-      const send = async (force) => {
-        const t = await resolve(force);
-        const headers = { "Content-Type": "application/json", ...opts.headers || {} };
-        if (t) headers["Authorization"] = "Bearer " + t;
-        return fetch(url, { ...opts, headers });
+      const send = async (rejectedToken) => {
+        const token = await resolveToken(rejectedToken);
+        const headers = {
+          "Content-Type": "application/json",
+          ...opts.headers || {},
+          Authorization: `Bearer ${token}`
+        };
+        return { token, response: await fetch(url, { ...opts, headers }) };
       };
-      const res = await send(false);
-      return res.status === 401 ? send(true) : res;
+      const first = await send();
+      if (first.response.status !== 401) return first.response;
+      return (await send(first.token)).response;
     };
   }
   const PlaybookSearch = {
@@ -52,7 +56,7 @@
         minChars: 1,
         placeholder: "Search assets\u2026",
         onResults: null,
-        // (assets, { query, total }) => void
+        // (assets, { query, total, page, totalPages }) => void
         onQuery: null,
         // (query) => void — fires before each request
         onError: null
@@ -98,15 +102,15 @@
       const style = document.createElement("style");
       style.id = STYLE_ID;
       style.textContent = `
-        .pb-search { font-family: inherit; }
-        .pb-search-input {
+        .pb-searchbox { font-family: inherit; }
+        .pb-searchbox-input {
           width: 100%; box-sizing: border-box; height: 42px; padding: 0 14px;
           border: 1px solid rgba(0,0,0,0.16); border-radius: 10px; background: #fff;
           color: #15171c; font: inherit; font-size: 15px; outline: none;
           transition: border-color .15s ease, box-shadow .15s ease;
         }
-        .pb-search-input::placeholder { color: #9aa1ac; }
-        .pb-search-input:focus {
+        .pb-searchbox-input::placeholder { color: #9aa1ac; }
+        .pb-searchbox-input:focus {
           border-color: #ff2753; box-shadow: 0 0 0 3px rgba(255,39,83,0.14);
         }
       `;
@@ -121,13 +125,14 @@
       this._authedFetch = makeAuthedFetch(settings.getAccessToken);
       this._timer = null;
       this._abort = null;
+      this._boardToken = null;
       this._render();
     }
     _render() {
-      this.container.classList.add("pb-search");
+      this.container.classList.add("pb-searchbox");
       const input = document.createElement("input");
       input.type = "search";
-      input.className = "pb-search-input";
+      input.className = "pb-searchbox-input";
       input.placeholder = this.config.placeholder;
       input.autocomplete = "off";
       input.addEventListener("input", () => this._onInput(input.value));
@@ -139,45 +144,73 @@
       clearTimeout(this._timer);
       const q = value.trim();
       if (q.length < this.config.minChars) {
-        this.config.onResults([], { query: q, total: 0 });
+        if (this._abort) this._abort.abort();
+        this._abort = null;
+        this.config.onResults([], { query: q, total: 0, page: 1, totalPages: 1 });
         return;
       }
       this._timer = setTimeout(() => this.search(q), this.config.debounceMs);
     }
-    async search(query) {
+    // The search filter takes a board token and boardId may be a numeric id,
+    // so look the board up once (the gallery does the same for its root board).
+    _resolveBoardToken() {
+      if (!this._boardToken) {
+        const boardId = this.config.boardId;
+        this._boardToken = this._authedFetch(
+          `${this.apiBaseUrl}/boards/${encodeURIComponent(boardId)}`
+        ).then((res) => res.ok ? res.json() : {}).then((data) => (data.data || data.board || data).token || boardId).catch(() => boardId);
+      }
+      return this._boardToken;
+    }
+    async search(query, page = 1) {
       query = (query || "").trim();
       if (this.config.onQuery) this.config.onQuery(query);
       if (this._abort) this._abort.abort();
-      this._abort = new AbortController();
+      const abort = this._abort = new AbortController();
       try {
+        const boardId = this.config.boardId && this.config.boardId !== "all" ? this.config.boardId : "";
         const params = new URLSearchParams({
-          nested_assets: "true",
-          page: "1",
-          per_page: this.config.perPage.toString()
+          page: page.toString(),
+          per_page: (this.config.perPage || 50).toString()
         });
-        if (query) params.append("query", query);
-        const url = this.config.boardId && this.config.boardId !== "all" ? `${this.apiBaseUrl}/boards/${encodeURIComponent(this.config.boardId)}/assets?${params}` : `${this.apiBaseUrl}/assets?${params}`;
-        const res = await this._authedFetch(url, { signal: this._abort.signal });
+        let url;
+        if (query) {
+          params.append("query", query);
+          if (boardId) {
+            params.append("filters[recursive_boards][]", await this._resolveBoardToken());
+          }
+          url = `${this.apiBaseUrl}/search?${params}`;
+        } else {
+          params.append("nested_assets", "true");
+          url = boardId ? `${this.apiBaseUrl}/boards/${encodeURIComponent(boardId)}/assets?${params}` : `${this.apiBaseUrl}/assets?${params}`;
+        }
+        const res = await this._authedFetch(url, { signal: abort.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
+        if (abort.signal.aborted) return;
         const assets = (data.data || data.assets || []).filter(
           (a) => a.collection_type !== "board"
         );
-        const total = data.pagy && data.pagy.count || assets.length;
-        this.config.onResults(assets, { query, total });
+        const pagy = data.pagy || {};
+        this.config.onResults(assets, {
+          query,
+          total: pagy.total_count ?? assets.length,
+          page: pagy.current_page || page,
+          totalPages: pagy.total_pages || 1
+        });
       } catch (err) {
-        if (err.name === "AbortError") return;
+        if (err.name === "AbortError" || abort.signal.aborted) return;
         console.error("Playbook Search: query failed -", err.message || err);
         if (this.config.onError) this.config.onError(err);
       } finally {
-        this._abort = null;
+        if (this._abort === abort) this._abort = null;
       }
     }
     destroy() {
       clearTimeout(this._timer);
       if (this._abort) this._abort.abort();
       this.container.innerHTML = "";
-      this.container.classList.remove("pb-search");
+      this.container.classList.remove("pb-searchbox");
     }
   }
   return PlaybookSearch;
