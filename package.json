@@ -1,6 +1,6 @@
 {
   "name": "playbook-sdk",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "A lightweight, zero-dependency frontend SDK for embedding beautiful, searchable media galleries backed by the Playbook API",
   "main": "dist/playbook-sdk.min.js",
   "module": "dist/playbook-sdk.min.js",
@@ -13,6 +13,14 @@
     ".": {
       "types": "./index.d.ts",
       "default": "./dist/playbook-sdk.min.js"
+    },
+    "./uploader": {
+      "types": "./index.d.ts",
+      "default": "./dist/playbook-uploader.min.js"
+    },
+    "./viewer": {
+      "types": "./index.d.ts",
+      "default": "./dist/playbook-viewer.min.js"
     }
   },
   "files": [

@@ -1,23 +1,24 @@
-/*! Playbook Viewer SDK v1.1.0 | MIT License | https://github.com/playbook-labs/playbook-sdk */
+/*! Playbook Viewer SDK v1.2.0 | MIT License | https://github.com/playbook-labs/playbook-sdk */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = global || self, global.PlaybookViewer = factory());
 })(this, function() {
   "use strict";
   const STYLE_ID = "__playbook-viewer-styles";
   const PlaybookViewer = {
-    version: "1.1.0",
+    version: "1.2.0",
     _overlay: null,
     _items: [],
     _index: 0,
     _onKey: null,
     open: function(opts) {
       opts = opts || {};
-      this._items = opts.items && opts.items.length ? opts.items : [{ src: opts.src, type: opts.type, title: opts.title }];
-      this._index = Math.min(Math.max(opts.index || 0, 0), this._items.length - 1);
-      if (!this._items[0] || !this._items[0].src) {
+      const items = opts.items && opts.items.length ? opts.items : [{ src: opts.src, type: opts.type, title: opts.title }];
+      if (items.some((item) => !item || !item.src)) {
         console.error("Playbook Viewer: open() needs a src (or items with src)");
         return;
       }
+      this._items = items;
+      this._index = Math.min(Math.max(opts.index || 0, 0), items.length - 1);
       this._injectStyles();
       if (!this._overlay) this._mount();
       this._render();
@@ -27,6 +28,7 @@
       document.removeEventListener("keydown", this._onKey);
       this._overlay.remove();
       this._overlay = null;
+      document.body.style.overflow = "";
     },
     next: function() {
       if (this._index < this._items.length - 1) {
@@ -55,6 +57,7 @@
       };
       document.addEventListener("keydown", this._onKey);
       document.body.appendChild(overlay);
+      document.body.style.overflow = "hidden";
       this._overlay = overlay;
     },
     // Swap in the current item; text via textContent (titles are untrusted).

@@ -11,7 +11,7 @@
  * `assets/upload_prepare` server-side, and returns its signed, single-use
  * response. The browser performs the signed transfer and then calls
  * `finishUpload`, which your backend turns into `assets/upload_complete`. The
- * write token never leaves your server. See examples/backend/upload-target.js.
+ * write token never leaves your server. See examples/backend/upload-target.mjs.
  *
  * The transfer is provider-aware: upload_prepare reports `storage_provider`
  * ("gcs" → resumable POST+PUT, "backblaze" → single PUT or multipart parts),
@@ -30,9 +30,8 @@
 
   const STYLE_ID = "__playbook-uploader-styles";
 
-  // Only storage-relevant headers from the target are replayed on the PUT.
-  // A compromised or MITM'd getUploadTarget response must not be able to set
-  // arbitrary request headers (e.g. Authorization) on the cross-origin upload.
+  // Guard for the cross-origin PUT: only storage headers are ever set on it,
+  // never an arbitrary one (e.g. Authorization).
   const SAFE_UPLOAD_HEADER =
     /^(content-type|content-md5|content-disposition|cache-control|x-goog-|x-amz-)/i;
 
@@ -49,17 +48,18 @@
         // encrypted_organization_metadata, file_extension, multipart_upload_id,
         // part_size, parts). The write token stays on your server.
         getUploadTarget: null,
-        // Optional. async (target, file) => asset. Called after the bytes land;
+        // REQUIRED. async (target, file) => asset. Called after the bytes land;
         // your backend calls POST /v1/{org}/assets/upload_complete with the
         // target's signed_gcs_id (+ multipart_upload_id) and returns the asset.
+        // This is the step that creates the asset in Playbook.
         finishUpload: null,
         variant: "dropzone", // "dropzone" (full drag area) | "button" (compact)
         accept: "image/*,video/*",
-        maxFileSizeBytes: 104857600, // 100 MB (the create_upload_url ceiling)
+        maxFileSizeBytes: 104857600, // 100 MB client-side cap; the API enforces real limits
         maxFiles: 0, // 0 = unlimited
         concurrency: 3, // max uploads in flight — bounds backend/API load
         multiple: true,
-        autoUpload: true,
+        autoUpload: true, // false: files wait until instance.upload() is called
         labels: {
           prompt: "Drag files here or click to upload",
           hint: "Images and video",
@@ -77,10 +77,21 @@
       // labels is nested: deep-merge so a partial override keeps the defaults.
       settings.labels = { ...defaultConfig.labels, ...(config && config.labels) };
 
+      // A non-positive or non-numeric cap would leave every file queued forever.
+      settings.concurrency = Math.max(1, Math.floor(settings.concurrency) || 1);
+
       if (typeof settings.getUploadTarget !== "function") {
         console.error(
           "Playbook Uploader: getUploadTarget(file) is required — it must " +
             "return a signed target minted by your backend (never a write token)."
+        );
+        return null;
+      }
+
+      if (typeof settings.finishUpload !== "function") {
+        console.error(
+          "Playbook Uploader: finishUpload(target, file) is required — your " +
+            "backend must call upload_complete, or no asset is created."
         );
         return null;
       }
@@ -109,6 +120,10 @@
         this.instances[containerId].destroy();
         delete this.instances[containerId];
       }
+    },
+
+    getInstance: function (containerId) {
+      return this.instances[containerId] || null;
     },
 
     _injectStyles: function () {
@@ -168,6 +183,8 @@
       this.queue = [];
       this.active = 0;
       this.outstanding = 0;
+      this.xhrs = new Set(); // in flight, so destroy() can abort them
+      this.destroyed = false;
       this._render();
     }
 
@@ -254,29 +271,36 @@
       );
       this._on(dropzone, "drop", (e) => {
         if (e.dataTransfer && e.dataTransfer.files) {
-          this._addFiles(e.dataTransfer.files);
+          this._addFiles(e.dataTransfer.files, true);
         }
       });
       return dropzone;
     }
 
-    _addFiles(fileList) {
+    // `dropped` files bypassed the file input, so its `multiple` and `accept`
+    // rules are applied here instead.
+    _addFiles(fileList, dropped) {
       let files = Array.from(fileList || []);
+      if (!this.config.multiple) {
+        files = files.slice(0, 1);
+      }
       if (this.config.maxFiles > 0) {
         files = files.slice(0, this.config.maxFiles);
       }
-      const accepted = files.filter((f) => this._validate(f));
+      const accepted = files.filter((f) => this._validate(f, dropped));
       if (!accepted.length) return;
       if (typeof this.config.onSelect === "function") {
         this.config.onSelect(accepted);
       }
       accepted.forEach((file) => {
-        const row = this._addRow(file);
-        if (this.config.autoUpload) {
-          this.queue.push({ file, row });
-          this.outstanding += 1;
-        }
+        this.queue.push({ file, row: this._addRow(file) });
+        this.outstanding += 1;
       });
+      if (this.config.autoUpload) this._pump();
+    }
+
+    // Start the files selected while `autoUpload` is false.
+    upload() {
       this._pump();
     }
 
@@ -286,34 +310,58 @@
       while (this.active < this.config.concurrency && this.queue.length) {
         const { file, row } = this.queue.shift();
         this.active += 1;
-        this._upload(file, row).then(() => {
-          this.active -= 1;
-          this.outstanding -= 1;
-          this._pump();
-          if (
-            this.outstanding === 0 &&
-            typeof this.config.onComplete === "function"
-          ) {
-            this.config.onComplete(
-              this.results.filter((r) => r.ok).map((r) => r.asset)
-            );
-          }
-        });
+        this._upload(file, row)
+          // Only a throwing consumer hook can reject here; log it and keep the
+          // queue moving rather than leak the slot.
+          .catch((err) => console.error("Playbook Uploader:", err))
+          .then(() => {
+            this.active -= 1;
+            this.outstanding -= 1;
+            this._pump();
+            if (this.outstanding === 0 && !this.destroyed) {
+              // Report this batch only; the next selection starts fresh.
+              const assets = this.results
+                .filter((r) => r.ok)
+                .map((r) => r.asset);
+              this.results = [];
+              if (typeof this.config.onComplete === "function") {
+                this.config.onComplete(assets);
+              }
+            }
+          });
       }
     }
 
-    _validate(file) {
+    // Size and type checks. A rejected file still gets a row, so the failure
+    // is visible instead of only reaching onError / the console.
+    _validate(file, dropped) {
+      let reason = null;
       if (file.size > this.config.maxFileSizeBytes) {
-        this._fail(
-          null,
-          file,
-          new Error(
-            `${file.name} is larger than the ${this.config.maxFileSizeBytes}-byte limit`
-          )
-        );
-        return false;
+        reason = `${file.name} is larger than the ${this.config.maxFileSizeBytes}-byte limit`;
+      } else if (dropped && !this._accepts(file)) {
+        reason = `${file.name} is not an accepted file type`;
       }
-      return true;
+      if (!reason) return true;
+      this._fail(this._addRow(file), file, new Error(reason));
+      return false;
+    }
+
+    // Mirrors the file input's `accept`: ".ext", "type/*", or an exact MIME type.
+    _accepts(file) {
+      const rules = String(this.config.accept || "")
+        .split(",")
+        .map((rule) => rule.trim().toLowerCase())
+        .filter(Boolean);
+      if (!rules.length) return true;
+      const type = (file.type || "").toLowerCase();
+      const name = (file.name || "").toLowerCase();
+      return rules.some((rule) =>
+        rule.startsWith(".")
+          ? name.endsWith(rule)
+          : rule.endsWith("/*")
+          ? type.startsWith(rule.slice(0, -1))
+          : type === rule
+      );
     }
 
     _addRow(file) {
@@ -337,9 +385,11 @@
       return { item, status, fill };
     }
 
-    // Resolves when the file has settled (ok or failed); never rejects, so the
-    // _pump() accounting runs for every outcome.
+    // Resolves when the file has settled (ok or failed). Upload errors are
+    // handled here; the success hook runs outside the try so a throwing
+    // onFileComplete cannot mark a registered upload as failed.
     async _upload(file, row) {
+      let asset;
       try {
         row.status.textContent = "Preparing…";
         // getUploadTarget returns the upload_prepare response data from your
@@ -347,29 +397,29 @@
         // encrypted_organization_metadata, file_extension, multipart_upload_id,
         // part_size, parts }.
         const target = await this.config.getUploadTarget(file);
+        if (this.destroyed) return;
         if (!target || !target.signed_gcs_id) {
           throw new Error("getUploadTarget must return the upload_prepare data");
         }
 
         await this._transfer(file, target, row);
 
-        let asset = null;
-        if (typeof this.config.finishUpload === "function") {
-          row.status.textContent = "Finishing…";
-          // Hand the whole target back; your backend calls upload_complete with
-          // its signed_gcs_id (+ multipart_upload_id).
-          asset = await this.config.finishUpload(target, file);
-        }
-
-        row.item.classList.add("pb-uploader-item--done");
-        row.status.textContent = "Done";
-        row.fill.style.width = "100%";
-        this.results.push({ file, asset, ok: true });
-        if (typeof this.config.onFileComplete === "function") {
-          this.config.onFileComplete(asset, file);
-        }
+        row.status.textContent = "Finishing…";
+        // Hand the whole target back; your backend calls upload_complete with
+        // its signed_gcs_id (+ multipart_upload_id).
+        asset = await this.config.finishUpload(target, file);
       } catch (err) {
-        this._fail(row, file, err);
+        if (!this.destroyed) this._fail(row, file, err);
+        return;
+      }
+      if (this.destroyed) return;
+
+      row.item.classList.add("pb-uploader-item--done");
+      row.status.textContent = "Done";
+      row.fill.style.width = "100%";
+      this.results.push({ file, asset, ok: true });
+      if (typeof this.config.onFileComplete === "function") {
+        this.config.onFileComplete(asset, file);
       }
     }
 
@@ -402,7 +452,9 @@
           file,
           {
             "Content-Type": contentType,
-            "x-amz-meta-extension": target.file_extension || "",
+            // Omitted when blank: the URL is signed without it in that case,
+            // and an unsigned x-amz-* header fails the signature check.
+            "x-amz-meta-extension": target.file_extension || null,
             "x-amz-meta-encrypted-organization-metadata": meta,
           },
           onPct
@@ -421,6 +473,7 @@
           return reject(new Error("Upload URL must be https"));
         }
         const xhr = new XMLHttpRequest();
+        this._track(xhr, reject);
         xhr.open("POST", target.upload_url);
         xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
         xhr.setRequestHeader("x-goog-resumable", "start");
@@ -467,6 +520,13 @@
       this._progress(file, row, 100); // guarantee the bar lands at 100%
     }
 
+    // Remember an in-flight request so destroy() can abort it.
+    _track(xhr, reject) {
+      this.xhrs.add(xhr);
+      xhr.onloadend = () => this.xhrs.delete(xhr);
+      xhr.onabort = () => reject(new Error("Upload aborted"));
+    }
+
     _isHttps(url) {
       try {
         return new URL(url).protocol === "https:";
@@ -482,6 +542,7 @@
       return new Promise((resolve, reject) => {
         if (!this._isHttps(url)) return reject(new Error("Upload URL must be https"));
         const xhr = new XMLHttpRequest();
+        this._track(xhr, reject);
         xhr.open("PUT", url);
         Object.keys(headers || {}).forEach((k) => {
           if (headers[k] != null && SAFE_UPLOAD_HEADER.test(k)) {
@@ -524,6 +585,10 @@
     }
 
     destroy() {
+      // Stop work: drop what is queued and abort what is in flight.
+      this.destroyed = true;
+      this.queue = [];
+      this.xhrs.forEach((xhr) => xhr.abort());
       this.eventListeners.forEach(({ el, evt, fn }) =>
         el.removeEventListener(evt, fn)
       );

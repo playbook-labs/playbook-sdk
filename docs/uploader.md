@@ -24,8 +24,8 @@ The transfer step is **provider-aware** — `upload_prepare` reports a
 resumable session with a POST, then PUT to it) or **Backblaze** (a single PUT, or
 one PUT per presigned part for files ≥ 5 MB). You don't handle any of that; you
 just supply the two backend callbacks. See
-[`examples/backend/upload-target.js`](../examples/backend/upload-target.js) for a
-runnable reference backend, and
+[`examples/backend/upload-target.mjs`](../examples/backend/upload-target.mjs) for a
+runnable, dependency-free reference backend, and
 [`examples/uploader-example.html`](../examples/uploader-example.html) for the
 client wiring.
 
@@ -49,16 +49,19 @@ client wiring.
           mediaType: file.type,
         }),
       });
+      if (!res.ok) throw new Error("could not prepare upload");
       return res.json(); // upload_prepare data (storage_provider, upload_url, …)
     },
 
-    // After the transfer, your backend calls assets/upload_complete.
+    // After the transfer, your backend calls assets/upload_complete. This is
+    // the step that creates the asset, so throw if it fails.
     finishUpload: async (target) => {
       const res = await fetch("/playbook/finish-upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ target }),
       });
+      if (!res.ok) throw new Error("could not finish upload");
       return res.json(); // the created asset
     },
 
@@ -73,19 +76,31 @@ client wiring.
 | --- | --- | --- | --- |
 | `containerId` | `string` | `"__playbook-uploader"` | Element the uploader renders into. |
 | `getUploadTarget` | `(file) => Promise<UploadTarget>` | — | **Required.** `upload_prepare` data from your backend. |
-| `finishUpload` | `(target, file) => Promise<Asset>` | — | Register the asset after the transfer. |
-| `accept` | `string` | `"image/*,video/*"` | File input filter. |
+| `finishUpload` | `(target, file) => Promise<Asset>` | — | **Required.** Registers the asset after the transfer; without it nothing is created in Playbook. |
+| `variant` | `"dropzone" \| "button"` | `"dropzone"` | Full drag area, or a compact button. |
+| `accept` | `string` | `"image/*,video/*"` | File filter, applied to picked and dropped files. |
 | `maxFileSizeBytes` | `number` | `104857600` | Client-side cap (UX only); the API enforces real limits. |
 | `maxFiles` | `number` | `0` | Per-selection cap; `0` = unlimited. |
-| `concurrency` | `number` | `3` | Max uploads in flight at once. |
+| `concurrency` | `number` | `3` | Max uploads in flight at once (minimum 1). |
 | `multiple` | `boolean` | `true` | Allow multi-select. |
-| `autoUpload` | `boolean` | `true` | Upload on select vs. wait. |
-| `labels` | `{ prompt, hint }` | — | Dropzone copy. |
+| `autoUpload` | `boolean` | `true` | Upload on select; when `false`, call `instance.upload()` to start. |
+| `labels` | `{ prompt, hint, button }` | — | Dropzone and button copy. |
 
 ### Events
 
 `onSelect(files)`, `onProgress(file, pct)`, `onFileComplete(asset, file)`,
 `onComplete(assets)`, `onError(error, file)`.
+
+`onComplete` receives the assets of the batch that just finished, not every
+asset uploaded since `init`.
+
+### Instance methods
+
+`PlaybookUploader.init()` returns the instance (also available later through
+`PlaybookUploader.getInstance("uploader")`):
+
+- `upload()` starts the files selected while `autoUpload` is `false`.
+- `destroy()` removes the uploader; see [Teardown](#teardown).
 
 ## `UploadTarget` shape
 
@@ -155,4 +170,4 @@ A full page wiring both widgets to one backend is in
 ## Teardown
 
 `PlaybookUploader.destroy("uploader")` removes the instance, its DOM, and its
-listeners.
+listeners. Queued files are dropped and transfers in flight are aborted.
