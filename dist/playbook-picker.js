@@ -1,4 +1,4 @@
-/*! Playbook Picker SDK v1.0.4 | MIT License | https://github.com/playbook-labs/playbook-sdk */
+/*! Playbook Picker SDK v1.1.0 | MIT License | https://github.com/playbook-labs/playbook-sdk */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = global || self, global.PlaybookPicker = factory());
 })(this, function() {
@@ -43,7 +43,7 @@
   const keyOf = (a) => a.token || a.id;
   const escapeHtml = (s) => (s == null ? "" : String(s)).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   const PlaybookPicker = {
-    version: "1.0.4",
+    version: "1.1.0",
     _overlay: null,
     _onKey: null,
     open: function(opts) {

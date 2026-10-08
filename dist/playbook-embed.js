@@ -1,4 +1,4 @@
-/*! Playbook Embed SDK v1.0.4 | MIT License | https://github.com/playbook-labs/playbook-sdk */
+/*! Playbook Embed SDK v1.1.0 | MIT License | https://github.com/playbook-labs/playbook-sdk */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = global || self, global.PlaybookEmbed = factory());
 })(this, function() {
@@ -46,7 +46,7 @@
   };
   const escapeHtml = (s) => (s == null ? "" : String(s)).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   const PlaybookEmbed = {
-    version: "1.0.4",
+    version: "1.1.0",
     instances: {},
     init: function(config) {
       const defaultConfig = {
