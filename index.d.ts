@@ -502,8 +502,8 @@ declare module "playbook-sdk/player" {
     containerId: string;
     /**
      * Asset to fetch + play. Omit if `src` is given. Plays the asset's HLS
-     * `stream_url` where the browser supports HLS natively, otherwise the
-     * original file (which needs download permission on the asset).
+     * `stream_url`, so the browser must support HLS natively and the video
+     * must have finished encoding; otherwise `onError` is called.
      */
     assetToken?: string;
     organizationSlug?: string;
@@ -521,7 +521,10 @@ declare module "playbook-sdk/player" {
     /** Fires once the video's metadata has loaded (`null` with a direct src). */
     onReady?: (asset: Asset | null) => void;
     onPlay?: () => void;
-    /** The asset request failed, or the video itself failed to load. */
+    /**
+     * The asset request or the video itself failed, the stream is not encoded
+     * yet, or the browser cannot play HLS.
+     */
     onError?: (error: Error) => void;
   }
 

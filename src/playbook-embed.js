@@ -73,6 +73,7 @@
   // By type ("video", "video/mp4") or by extension; signed URLs carry a query.
   const isVideo = (type, url) =>
     (type || "").indexOf("video") === 0 || /\.(mp4|webm|ogg|mov|m3u8)(?:[?#]|$)/i.test(url || "");
+  const PROCESSING_MESSAGE = "This video is still processing. Try again in a few minutes.";
   const canPlayHls = () =>
     document.createElement("video").canPlayType("application/vnd.apple.mpegurl") !== "";
 
@@ -187,24 +188,25 @@
       }
       this.container.innerHTML = '<div class="pb-embed-loading">Loading…</div>';
       try {
-        const path = `/assets/${encodeURIComponent(this.config.assetToken)}`;
-        const asset = await this._getJson(path);
+        const asset = await this._getJson(`/assets/${encodeURIComponent(this.config.assetToken)}`);
+        if (this._destroyed) return;
         const video = isVideo(asset.media_type || asset.type, asset.display_url || asset.url);
         let src;
         let poster = "";
         if (video) {
           // For a video the API's display_url is the poster, not the video. The
-          // playable sources are stream_url (HLS, null until the encode
-          // finishes) and the original file's raw_url.
-          src =
-            asset.stream_url && canPlayHls()
-              ? asset.stream_url
-              : (await this._getJson(`${path}/download`)).raw_url;
+          // playable source is stream_url: an HLS manifest, null until the
+          // encode finishes (reading the asset is what starts one where needed).
+          if (!asset.stream_url) {
+            this._fail(new Error("Video is still processing"), PROCESSING_MESSAGE);
+            return;
+          }
+          if (!canPlayHls()) throw new Error("This browser cannot play HLS video natively");
+          src = asset.stream_url;
           poster = asset.display_url || asset.thumbnail_url || "";
         } else {
           src = asset.display_url || asset.url || asset.thumbnail_url;
         }
-        if (this._destroyed) return;
         if (!src) throw new Error("Asset has no displayable URL");
         this._renderMedia(
           { src: src, poster: poster, title: this.config.title || titleOf(asset), video: video },
@@ -222,10 +224,14 @@
       return data.data || data.asset || data;
     }
 
-    _fail(err) {
+    _fail(err, message = "Could not load asset.") {
       if (this._destroyed) return;
       console.error("Playbook Embed: failed to load asset -", err.message || err);
-      this.container.innerHTML = '<div class="pb-embed-error">Could not load asset.</div>';
+      const note = document.createElement("div");
+      note.className = "pb-embed-error";
+      note.textContent = message;
+      this.container.innerHTML = "";
+      this.container.appendChild(note);
       if (this.config.onError) this.config.onError(err);
     }
 

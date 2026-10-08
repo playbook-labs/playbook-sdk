@@ -1,4 +1,4 @@
-/*! Playbook Player SDK v1.1.0 | MIT License | https://github.com/playbook-labs/playbook-sdk */
+/*! Playbook Player SDK v1.2.0 | MIT License | https://github.com/playbook-labs/playbook-sdk */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = global || self, global.PlaybookPlayer = factory());
 })(this, function() {
@@ -43,9 +43,10 @@
     };
   }
   const titleOf = (a) => a.title || a.name || "Video";
+  const PROCESSING_MESSAGE = "This video is still processing. Try again in a few minutes.";
   const canPlayHls = () => document.createElement("video").canPlayType("application/vnd.apple.mpegurl") !== "";
   const PlaybookPlayer = {
-    version: "1.1.0",
+    version: "1.2.0",
     instances: {},
     init: function(config) {
       const defaultConfig = {
@@ -158,13 +159,22 @@
       }
       this.container.innerHTML = '<div class="pb-player-loading">Loading\u2026</div>';
       try {
-        const path = `/assets/${encodeURIComponent(this.config.assetToken)}`;
-        const asset = await this._getJson(path);
-        const src = asset.stream_url && canPlayHls() ? asset.stream_url : (await this._getJson(`${path}/download`)).raw_url;
+        const asset = await this._getJson(`/assets/${encodeURIComponent(this.config.assetToken)}`);
         if (this._destroyed) return;
-        if (!src) throw new Error("Asset has no playable URL");
+        if ((asset.media_type || "").indexOf("video") !== 0) {
+          throw new Error("Asset is not a video");
+        }
+        if (!asset.stream_url) {
+          this._fail(new Error("Video is still processing"), PROCESSING_MESSAGE);
+          return;
+        }
+        if (!canPlayHls()) throw new Error("This browser cannot play HLS video natively");
         this._mount(
-          { src, poster: asset.display_url || asset.thumbnail_url || "", title: titleOf(asset) },
+          {
+            src: asset.stream_url,
+            poster: asset.display_url || asset.thumbnail_url || "",
+            title: titleOf(asset)
+          },
           asset
         );
       } catch (err) {
@@ -177,11 +187,15 @@
       const data = await res.json();
       return data.data || data.asset || data;
     }
-    _fail(err) {
+    _fail(err, message = "Could not load video.") {
       if (this._destroyed) return;
       console.error("Playbook Player: failed to load video -", err.message || err);
       this.video = null;
-      this.container.innerHTML = '<div class="pb-player-error">Could not load video.</div>';
+      const note = document.createElement("div");
+      note.className = "pb-player-error";
+      note.textContent = message;
+      this.container.innerHTML = "";
+      this.container.appendChild(note);
       if (this.config.onError) this.config.onError(err);
     }
     _mount(media, asset) {

@@ -75,10 +75,20 @@ A poster with a play overlay that swaps to native playback on click.
 </script>
 ```
 
-With an `assetToken` the player plays the asset's HLS stream where the browser
-supports HLS natively (Safari, iOS) and the original file everywhere else. The
-original file needs download permission on the asset and is fetched through
-`GET /assets/{token}/download`. No HLS library is bundled.
+With an `assetToken` the player reads the asset and plays its HLS stream
+(`stream_url`). Two things follow from that:
+
+- **The browser must play HLS natively.** Safari and iOS do, and so do current
+  Chromium browsers. No HLS library is bundled, so elsewhere the player shows an
+  error and calls `onError`.
+- **The stream must exist.** A video that has not finished encoding has no
+  stream yet; the player says it is still processing and calls `onError`.
+  Reading the asset starts the encode where one is needed, so it plays on a
+  later view.
+
+The short-lived board token from `getAccessToken` can read an asset on its board
+and sub-boards, but not the original uploaded file, so there is no fallback to
+it. An asset outside the token's board is reported as not found.
 
 To skip the API, pass `src` (and optionally `poster`) instead:
 `PlaybookPlayer.init({ containerId: "player", src: "clip.mp4", poster: "clip.jpg" })`.
@@ -93,7 +103,7 @@ To skip the API, pass `src` (and optionally `poster`) instead:
 | `controls`, `rounded` | `boolean` | `true` | |
 | `onReady` | `(asset \| null) => void` | — | The video's metadata has loaded. |
 | `onPlay` | `() => void` | — | |
-| `onError` | `(error) => void` | — | The asset request or the video itself failed. |
+| `onError` | `(error) => void` | — | The asset request or the video itself failed, the stream is not ready, or the browser cannot play it. |
 
 ## Single asset embed
 
@@ -125,7 +135,8 @@ lightbox on click when its bundle is on the page.
 | `onLoad` | `(asset \| null) => void` | — | The image, or the video's metadata, has loaded. |
 | `onError` | `(error) => void` | — | The asset request or the media itself failed. |
 
-Video assets resolve their source the same way the player does.
+Video assets play from their HLS stream under the same two conditions as the
+player; images use the asset's `display_url`.
 
 ## Headless search
 

@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0]
+
+### Added
+
+- Four components, each its own bundle: a media picker (`PlaybookPicker`), an
+  inline video player (`PlaybookPlayer`), a single asset embed
+  (`PlaybookEmbed`) and a headless search box (`PlaybookSearch`). See
+  [docs/components.md](docs/components.md).
+- `package.json` exports for every bundle: `playbook-sdk/uploader`, `/viewer`,
+  `/picker`, `/player`, `/embed` and `/search`.
+
 ## [1.1.0]
 
 ### Added
@@ -14,12 +25,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one call to it.
 - `examples/backend/token-server.mjs`, a dependency-free server that exchanges
   an API token for a short-lived, read-only, single-board token.
-- Four components, each its own bundle: a media picker (`PlaybookPicker`), an
-  inline video player (`PlaybookPlayer`), a single asset embed
-  (`PlaybookEmbed`) and a headless search box (`PlaybookSearch`). See
-  [docs/components.md](docs/components.md).
-- `package.json` exports for every bundle: `playbook-sdk/uploader`, `/viewer`,
-  `/picker`, `/player`, `/embed` and `/search`.
 
 ### Deprecated
 
@@ -67,6 +72,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Initial release: responsive masonry gallery, search, board navigation,
   modal viewer, download support, and TypeScript definitions.
 
+[1.2.0]: https://github.com/playbook-labs/playbook-sdk/releases/tag/v1.2.0
 [1.1.0]: https://github.com/playbook-labs/playbook-sdk/releases/tag/v1.1.0
 [1.0.4]: https://github.com/playbook-labs/playbook-sdk/releases/tag/v1.0.4
 [1.0.3]: https://github.com/playbook-labs/playbook-sdk/releases/tag/v1.0.3

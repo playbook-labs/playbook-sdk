@@ -92,12 +92,8 @@ const video = {
   display_url: "https://cdn.test/poster.webp",
   stream_url: "https://cdn.test/master.m3u8",
 };
-// Answers the asset read with `asset` and its /download with the original file.
-const serveAsset = (asset) => ({ url }) => ({
-  body: {
-    data: url.pathname.endsWith("/download") ? { raw_url: "https://cdn.test/original.mp4" } : asset,
-  },
-});
+// Answers every request with `asset`.
+const serveAsset = (asset) => () => ({ body: { data: asset } });
 
 function startSearch(config) {
   const results = [];
@@ -266,13 +262,38 @@ test("player plays the asset's HLS stream where the browser supports it", async 
   assert.equal(poster.src, video.display_url);
 });
 
-test("player falls back to the original file without native HLS, never the poster", async () => {
+// A board token may read the asset but not its original file, so the stream is
+// the only source: no /download request, and never the poster as a video.
+test("player reports an error without native HLS and asks for nothing but the asset", async () => {
   const requests = stubFetch(serveAsset(video));
-  const { container } = startPlayer({ ...access, assetToken: "vid" });
+  const { container, calls } = startPlayer({ ...access, assetToken: "vid" });
   await sleep(10);
 
-  assert.equal(requests[1].url.pathname, "/v1/acme/assets/vid/download");
-  assert.equal(container.children[0].src, "https://cdn.test/original.mp4");
+  assert.deepEqual(requests.map((r) => r.url.pathname), ["/v1/acme/assets/vid"]);
+  assert.deepEqual(container.children.map((child) => child.className), ["pb-player-error"]);
+  assert.equal(calls.errors.length, 1);
+});
+
+test("player says so when the video's stream is not encoded yet", async () => {
+  browser.hls = true;
+  stubFetch(serveAsset({ ...video, stream_url: null }));
+  const { container, calls } = startPlayer({ ...access, assetToken: "vid" });
+  await sleep(10);
+  browser.hls = false;
+
+  assert.match(container.children[0].textContent, /still processing/);
+  assert.match(calls.errors[0].message, /still processing/);
+});
+
+test("player refuses an asset that is not a video", async () => {
+  browser.hls = true;
+  stubFetch(serveAsset({ token: "img", media_type: "image/jpeg", display_url: "https://cdn.test/hero.jpg" }));
+  const { container, calls } = startPlayer({ ...access, assetToken: "img" });
+  await sleep(10);
+  browser.hls = false;
+
+  assert.deepEqual(container.children.map((child) => child.className), ["pb-player-error"]);
+  assert.match(calls.errors[0].message, /not a video/);
 });
 
 test("player mounts nothing once destroyed while its asset is loading", async () => {
@@ -296,7 +317,7 @@ test("player is ready once metadata loads and reports a video that fails to load
 
   mounted.listeners.error();
   assert.equal(calls.errors.length, 1);
-  assert.match(container.innerHTML, /pb-player-error/);
+  assert.deepEqual(container.children.map((child) => child.className), ["pb-player-error"]);
 });
 
 test("player shows the play overlay when the browser blocks autoplay", async () => {
@@ -332,16 +353,29 @@ test("embed picks video or image for a direct src from its extension", () => {
   }
 });
 
-test("embed plays a video asset from its file, with display_url as the poster", async () => {
+test("embed plays a video asset from its stream, with display_url as the poster", async () => {
   containers = {};
-  stubFetch(serveAsset(video));
+  browser.hls = true;
+  const requests = stubFetch(serveAsset(video));
   const { container } = startEmbed({ ...access, assetToken: "vid" });
   await sleep(10);
+  browser.hls = false;
 
   const mounted = container.children[0];
+  assert.deepEqual(requests.map((r) => r.url.pathname), ["/v1/acme/assets/vid"]);
   assert.equal(mounted.tag, "video");
-  assert.equal(mounted.src, "https://cdn.test/original.mp4");
+  assert.equal(mounted.src, video.stream_url);
   assert.equal(mounted.poster, video.display_url);
+});
+
+test("embed says so when a video's stream is not encoded yet", async () => {
+  containers = {};
+  stubFetch(serveAsset({ ...video, stream_url: null }));
+  const { container, calls } = startEmbed({ ...access, assetToken: "vid" });
+  await sleep(10);
+
+  assert.match(container.children[0].textContent, /still processing/);
+  assert.equal(calls.errors.length, 1);
 });
 
 test("embed reports an image as loaded only once it has loaded", async () => {
