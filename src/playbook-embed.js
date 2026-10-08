@@ -139,10 +139,11 @@
       style.id = STYLE_ID;
       style.textContent = `
         .pb-embed { display: block; line-height: 0; max-width: 100%; }
-        .pb-embed-media {
-          display: block; width: 100%; height: auto; max-width: 100%;
-          background: #f3f4f6;
-        }
+        .pb-embed-media { display: block; max-width: 100%; height: auto; background: #f3f4f6; }
+        /* Images render at their natural size (shrink to fit, never upscale, so
+           they stay crisp); video fills the container width. */
+        .pb-embed img.pb-embed-media { width: auto; }
+        .pb-embed video.pb-embed-media { width: 100%; }
         .pb-embed--rounded .pb-embed-media { border-radius: 12px; }
         .pb-embed--clickable { cursor: zoom-in; }
         .pb-embed-loading, .pb-embed-error {
