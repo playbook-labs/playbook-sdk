@@ -36,11 +36,14 @@ globalThis.document = {
 };
 console.error = () => {};
 
-// Records every request. Each one succeeds on the next tick unless `hold` is
-// set, which leaves it in flight.
+// Records every request. Each one answers on the next tick with `status` (and
+// `location` as its Location header) unless `hold` is set, which leaves it in
+// flight.
 class FakeXHR {
   static sent = [];
   static hold = false;
+  static status = 200;
+  static location = "https://storage.test/session";
   upload = {};
   headers = {};
   open(method, url) {
@@ -51,14 +54,16 @@ class FakeXHR {
     this.headers[name] = value;
   }
   getResponseHeader(name) {
-    return name === "Location" ? "https://storage.test/session" : null;
+    return name === "Location" ? FakeXHR.location : null;
   }
   send(body) {
     this.body = body;
     FakeXHR.sent.push(this);
     if (FakeXHR.hold) return;
     setTimeout(() => {
-      this.status = 200;
+      const size = body ? body.size : 0;
+      this.upload.onprogress?.({ lengthComputable: true, loaded: size, total: size });
+      this.status = FakeXHR.status;
       this.onload?.();
       this.onloadend?.();
     }, 0);
@@ -91,7 +96,9 @@ const gcsTarget = {
 function start(config = {}) {
   FakeXHR.sent = [];
   FakeXHR.hold = false;
-  const seen = { prepared: [], finished: [], completed: [], errors: [] };
+  FakeXHR.status = 200;
+  FakeXHR.location = "https://storage.test/session";
+  const seen = { prepared: [], finished: [], completed: [], errors: [], progress: [] };
   const uploader = Uploader.init({
     containerId: "uploader",
     getUploadTarget: async (f) => {
@@ -104,6 +111,7 @@ function start(config = {}) {
     },
     onComplete: (assets) => seen.completed.push(assets.map((asset) => asset.id)),
     onError: (error, f) => seen.errors.push(f.name),
+    onProgress: (f, pct) => seen.progress.push(`${f.name} ${pct}`),
     ...config,
   });
   return { uploader, seen };
@@ -130,6 +138,58 @@ test("gcs: starts a resumable session, then PUTs the bytes to it", async () => {
   assert.equal(FakeXHR.sent[0].headers["x-goog-meta-extension"], ".png");
   assert.deepEqual(seen.finished, [gcsTarget]);
   assert.deepEqual(seen.completed, [["a.png"]]);
+  uploader.destroy();
+});
+
+test("sends the media type the target was signed for, not the browser's file.type", async () => {
+  const { uploader } = start({
+    getUploadTarget: async () => ({ ...gcsTarget, media_type: "image/heic" }),
+  });
+
+  pick(uploader, [file("IMG_0001.heic", { type: "" })]);
+  await settle();
+
+  assert.deepEqual(
+    FakeXHR.sent.map((xhr) => xhr.headers["Content-Type"]),
+    ["image/heic", "image/heic"]
+  );
+  uploader.destroy();
+});
+
+test("reports upload progress", async () => {
+  const { uploader, seen } = start();
+
+  drop(uploader, [file("a.png")]);
+  await settle();
+
+  assert.deepEqual(seen.progress, ["a.png 100"]);
+  uploader.destroy();
+});
+
+test("a storage error fails the file and never calls finishUpload", async () => {
+  const { uploader, seen } = start();
+  FakeXHR.status = 403;
+
+  drop(uploader, [file("a.png")]);
+  await settle();
+
+  assert.deepEqual(requests(), ["POST https://storage.test/init"]);
+  assert.deepEqual(seen.errors, ["a.png"]);
+  assert.deepEqual(seen.finished, []);
+  assert.deepEqual(seen.completed, [[]]);
+  uploader.destroy();
+});
+
+test("gcs: fails when storage does not expose the session Location", async () => {
+  const { uploader, seen } = start();
+  FakeXHR.location = null;
+
+  drop(uploader, [file("a.png")]);
+  await settle();
+
+  assert.deepEqual(requests(), ["POST https://storage.test/init"]);
+  assert.deepEqual(seen.errors, ["a.png"]);
+  assert.deepEqual(seen.finished, []);
   uploader.destroy();
 });
 

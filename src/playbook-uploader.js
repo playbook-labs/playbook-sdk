@@ -30,11 +30,6 @@
 
   const STYLE_ID = "__playbook-uploader-styles";
 
-  // Guard for the cross-origin PUT: only storage headers are ever set on it,
-  // never an arbitrary one (e.g. Authorization).
-  const SAFE_UPLOAD_HEADER =
-    /^(content-type|content-md5|content-disposition|cache-control|x-goog-|x-amz-)/i;
-
   const PlaybookUploader = {
     version: __PB_VERSION__,
     instances: {},
@@ -319,7 +314,8 @@
             this.outstanding -= 1;
             this._pump();
             if (this.outstanding === 0 && !this.destroyed) {
-              // Report this batch only; the next selection starts fresh.
+              // Report what finished since the last onComplete; selections
+              // that overlap in time drain together as one batch.
               const assets = this.results
                 .filter((r) => r.ok)
                 .map((r) => r.asset);
@@ -427,8 +423,14 @@
     // provider reported by upload_prepare:
     //   gcs        → initiate a resumable session (POST), then PUT to it
     //   backblaze  → single PUT (<5MB) or one PUT per presigned part (>=5MB)
+    // The API reports "gcs" for every workspace today, so the backblaze paths
+    // follow the API contract but have not run against real storage.
     async _transfer(file, target, row) {
-      const contentType = file.type || "application/octet-stream";
+      // The upload URL is signed for the media type your backend sent to
+      // upload_prepare. If it differs from the browser's file.type (or that is
+      // empty), have the backend return it as `media_type` on the target.
+      const contentType =
+        target.media_type || file.type || "application/octet-stream";
       const meta = target.encrypted_organization_metadata;
       const onPct = (pct) => this._progress(file, row, pct);
 
@@ -436,7 +438,7 @@
         if (meta == null) {
           throw new Error("upload_prepare missing encrypted_organization_metadata");
         }
-        const sessionUrl = await this._gcsInitiate(file, target);
+        const sessionUrl = await this._gcsInitiate(target, contentType);
         await this._putXhr(sessionUrl, file, { "Content-Type": contentType }, onPct);
       } else if (target.multipart_upload_id && target.parts && target.parts.length) {
         if (!(target.part_size > 0)) {
@@ -467,7 +469,7 @@
 
     // GCS resumable: POST to start a session, read the Location header (the
     // storage bucket's CORS must expose it), and return the session URL.
-    _gcsInitiate(file, target) {
+    _gcsInitiate(target, contentType) {
       return new Promise((resolve, reject) => {
         if (!this._isHttps(target.upload_url)) {
           return reject(new Error("Upload URL must be https"));
@@ -475,7 +477,7 @@
         const xhr = new XMLHttpRequest();
         this._track(xhr, reject);
         xhr.open("POST", target.upload_url);
-        xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+        xhr.setRequestHeader("Content-Type", contentType);
         xhr.setRequestHeader("x-goog-resumable", "start");
         xhr.setRequestHeader(
           "x-goog-meta-encrypted-organization-metadata",
@@ -536,8 +538,8 @@
     }
 
     // One PUT with upload progress (XHR, not fetch, for progress events).
-    // onProgress receives (pct, loaded, total). Only storage-relevant headers
-    // are sent (allowlist), never an arbitrary set from an upstream response.
+    // onProgress receives (pct, loaded, total). Headers with a null value are
+    // left out.
     _putXhr(url, body, headers, onProgress) {
       return new Promise((resolve, reject) => {
         if (!this._isHttps(url)) return reject(new Error("Upload URL must be https"));
@@ -545,7 +547,7 @@
         this._track(xhr, reject);
         xhr.open("PUT", url);
         Object.keys(headers || {}).forEach((k) => {
-          if (headers[k] != null && SAFE_UPLOAD_HEADER.test(k)) {
+          if (headers[k] != null) {
             xhr.setRequestHeader(k, headers[k]);
           }
         });

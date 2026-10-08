@@ -109,8 +109,9 @@ async function prepare(body, res) {
   });
 
   // The browser needs the whole prepare response to perform the transfer.
-  // None of it is secret (signed URLs + opaque metadata).
-  send(res, 200, data);
+  // None of it is secret (signed URLs + opaque metadata). media_type is the
+  // type the URL was signed for; the uploader sends it as Content-Type.
+  send(res, 200, { ...data, media_type: mediaType });
 }
 
 // Step 2 — complete. The browser sends the target back; we use OUR stored
@@ -121,22 +122,22 @@ async function complete(body, res) {
   if (!record) {
     return send(res, 409, { error: "unknown or already-used upload" });
   }
-  // Single use: claimed now, restored below if Playbook does not confirm, so
-  // a failed complete can be retried.
-  pending.delete(target.signed_gcs_id);
+  pending.delete(target.signed_gcs_id); // single use
 
-  try {
-    const upstream = await playbook("assets/upload_complete", {
-      ...record,
-      signed_gcs_id: target.signed_gcs_id,
-      multipart_upload_id: target.multipart_upload_id || undefined,
-    });
-    if (!upstream.ok) throw new Error("upstream failed");
-    send(res, 200, (await upstream.json()).data); // the created asset
-  } catch (e) {
-    pending.set(target.signed_gcs_id, record);
-    send(res, 502, { error: "upstream failed" });
+  const upstream = await playbook("assets/upload_complete", {
+    ...record,
+    signed_gcs_id: target.signed_gcs_id,
+    multipart_upload_id: target.multipart_upload_id || undefined,
+  });
+  if (!upstream.ok) {
+    // A 4xx means Playbook created nothing (e.g. 404 while the object is not
+    // visible yet), so this upload may be completed again. Anything else is
+    // ambiguous, and upload_complete is not idempotent: a retry could create a
+    // second asset.
+    if (upstream.status < 500) pending.set(target.signed_gcs_id, record);
+    return send(res, 502, { error: "upstream failed" });
   }
+  send(res, 200, (await upstream.json()).data); // the created asset
 }
 
 const routes = {

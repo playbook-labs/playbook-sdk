@@ -25,6 +25,7 @@
     _items: [],
     _index: 0,
     _onKey: null,
+    _bodyOverflow: "",
 
     open: function (opts) {
       opts = opts || {};
@@ -49,7 +50,7 @@
       document.removeEventListener("keydown", this._onKey);
       this._overlay.remove();
       this._overlay = null;
-      document.body.style.overflow = "";
+      document.body.style.overflow = this._bodyOverflow;
     },
 
     next: function () {
@@ -90,7 +91,9 @@
       document.addEventListener("keydown", this._onKey);
 
       document.body.appendChild(overlay);
-      document.body.style.overflow = "hidden"; // as the gallery modal does
+      // Lock page scroll while open; close() puts the host page's value back.
+      this._bodyOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
       this._overlay = overlay;
     },
 

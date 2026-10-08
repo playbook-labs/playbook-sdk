@@ -347,6 +347,11 @@ declare module "playbook-sdk/uploader" {
    * Backblaze single / multipart) — none of these values is secret.
    */
   export interface UploadTarget {
+    /**
+     * The media type your backend sent to upload_prepare. The upload URL is
+     * signed for it, so the SDK sends it as Content-Type (falls back to file.type).
+     */
+    media_type?: string;
     /** "gcs" (resumable POST+PUT) or "backblaze" (single PUT / multipart parts). */
     storage_provider: "gcs" | "backblaze" | string;
     /** Signed URL: GCS resumable-init (POST) or Backblaze single-part (PUT). Null for multipart. */
@@ -385,7 +390,7 @@ declare module "playbook-sdk/uploader" {
     finishUpload: (target: UploadTarget, file: File) => Promise<Asset>;
     /** "dropzone" (full drag area, default) or "button" (compact trigger). */
     variant?: "dropzone" | "button";
-    /** Accepted MIME types for the file input (default "image/*,video/*"). */
+    /** Accepted types (default "image/*,video/*"): the picker's filter, enforced by the uploader on dropped files. */
     accept?: string;
     /** Max file size in bytes (default 104857600; a client-side cap, the API enforces real limits). */
     maxFileSizeBytes?: number;
@@ -402,7 +407,7 @@ declare module "playbook-sdk/uploader" {
     onSelect?: (files: File[]) => void;
     onProgress?: (file: File, pct: number) => void;
     onFileComplete?: (asset: Asset, file: File) => void;
-    /** Called when a batch settles, with the assets that batch uploaded. */
+    /** Called when the queue drains, with the assets uploaded since it last fired. */
     onComplete?: (assets: Asset[]) => void;
     onError?: (error: Error, file: File) => void;
   }

@@ -10,6 +10,7 @@
     _items: [],
     _index: 0,
     _onKey: null,
+    _bodyOverflow: "",
     open: function(opts) {
       opts = opts || {};
       const items = opts.items && opts.items.length ? opts.items : [{ src: opts.src, type: opts.type, title: opts.title }];
@@ -28,7 +29,7 @@
       document.removeEventListener("keydown", this._onKey);
       this._overlay.remove();
       this._overlay = null;
-      document.body.style.overflow = "";
+      document.body.style.overflow = this._bodyOverflow;
     },
     next: function() {
       if (this._index < this._items.length - 1) {
@@ -57,6 +58,7 @@
       };
       document.addEventListener("keydown", this._onKey);
       document.body.appendChild(overlay);
+      this._bodyOverflow = document.body.style.overflow;
       document.body.style.overflow = "hidden";
       this._overlay = overlay;
     },
