@@ -463,10 +463,10 @@ For issues and questions:
 ## Roadmap
 
 - [ ] Dark theme support
-- [ ] Video preview in grid
+- [x] Video preview in grid
 - [x] Drag & drop upload
 - [ ] Batch download
-- [ ] Grid/List view toggle
-- [ ] Advanced filtering
-- [ ] Asset metadata display
+- [x] Grid/List view toggle
+- [x] Advanced filtering
+- [x] Asset metadata display
 - [ ] Lazy loading optimization
