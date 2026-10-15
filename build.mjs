@@ -16,6 +16,10 @@ const bundles = [
   { src: "src/playbook-sdk.js", out: "dist/playbook-sdk", name: "Playbook Gallery SDK" },
   { src: "src/playbook-uploader.js", out: "dist/playbook-uploader", name: "Playbook Uploader SDK" },
   { src: "src/playbook-viewer.js", out: "dist/playbook-viewer", name: "Playbook Viewer SDK" },
+  { src: "src/playbook-picker.js", out: "dist/playbook-picker", name: "Playbook Picker SDK" },
+  { src: "src/playbook-player.js", out: "dist/playbook-player", name: "Playbook Player SDK" },
+  { src: "src/playbook-embed.js", out: "dist/playbook-embed", name: "Playbook Embed SDK" },
+  { src: "src/playbook-search.js", out: "dist/playbook-search", name: "Playbook Search SDK" },
 ];
 
 for (const { src, out, name } of bundles) {

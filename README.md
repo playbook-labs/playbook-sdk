@@ -2,7 +2,7 @@
 
 A lightweight frontend SDK for creating masonry grid galleries with search, board navigation, and modal views. Works for asset management, photo galleries, and media libraries.
 
-![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)
+![Version](https://img.shields.io/npm/v/playbook-sdk.svg?color=blue)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Size](https://img.shields.io/badge/size-~7kB%20gzipped-orange.svg)
 
@@ -439,6 +439,12 @@ Modal controls:
 - `←` Previous asset
 - `→` Next asset
 - `Esc` Close modal
+
+## More Components
+
+The package also ships a media picker, an inline video player, a single asset
+embed and a headless search box, each as its own bundle. See
+[docs/components.md](docs/components.md).
 
 ## Browser Support
 
