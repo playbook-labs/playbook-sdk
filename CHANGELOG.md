@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0]
+
+### Added
+
+- Uploader (`dist/playbook-uploader.min.js`, global `PlaybookUploader`, import
+  `playbook-sdk/uploader`): a drag-and-drop or button uploader. It takes no
+  write token; `getUploadTarget` and `finishUpload` call your backend, which
+  calls `assets/upload_prepare` and `assets/upload_complete`. The browser sends
+  the bytes straight to storage (GCS resumable, or Backblaze single PUT or
+  multipart). See `docs/uploader.md`.
+- `examples/backend/upload-target.mjs`, a dependency-free reference backend for
+  the uploader.
+- Viewer (`dist/playbook-viewer.min.js`, global `PlaybookViewer`, import
+  `playbook-sdk/viewer`): a standalone lightbox for images and video.
+
 ## [1.1.0]
 
 ### Added
@@ -61,6 +76,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Initial release: responsive masonry gallery, search, board navigation,
   modal viewer, download support, and TypeScript definitions.
 
+[1.2.0]: https://github.com/playbook-labs/playbook-sdk/releases/tag/v1.2.0
 [1.1.0]: https://github.com/playbook-labs/playbook-sdk/releases/tag/v1.1.0
 [1.0.4]: https://github.com/playbook-labs/playbook-sdk/releases/tag/v1.0.4
 [1.0.3]: https://github.com/playbook-labs/playbook-sdk/releases/tag/v1.0.3

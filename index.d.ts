@@ -338,11 +338,145 @@ declare module "playbook-sdk" {
   export default PlaybookSDK;
 }
 
+declare module "playbook-sdk/uploader" {
+  import { Asset } from "playbook-sdk";
+
+  /**
+   * The `assets/upload_prepare` response `data` your backend returns to the
+   * browser. The SDK performs the transfer this describes (GCS resumable, or
+   * Backblaze single / multipart) — none of these values is secret.
+   */
+  export interface UploadTarget {
+    /**
+     * The media type your backend sent to upload_prepare. The upload URL is
+     * signed for it, so the SDK sends it as Content-Type (falls back to file.type).
+     */
+    media_type?: string;
+    /** "gcs" (resumable POST+PUT) or "backblaze" (single PUT / multipart parts). */
+    storage_provider: "gcs" | "backblaze" | string;
+    /** Signed URL: GCS resumable-init (POST) or Backblaze single-part (PUT). Null for multipart. */
+    upload_url?: string | null;
+    /** Signed object id — passed back to upload_complete via finishUpload. */
+    signed_gcs_id: string;
+    /** Opaque metadata the storage headers must carry. */
+    encrypted_organization_metadata: string;
+    /** File extension derived from the title (may be null). */
+    file_extension?: string | null;
+    /** Present for Backblaze multipart (files >= 5MB). */
+    multipart_upload_id?: string | null;
+    /** Part size in bytes for multipart. */
+    part_size?: number | null;
+    /** Presigned part URLs for multipart. */
+    parts?: Array<{ part_number: number; url: string }> | null;
+    /** Passthrough fields (e.g. collection_token). */
+    [key: string]: any;
+  }
+
+  export interface UploaderConfig {
+    /** ID of the container element the uploader renders into. */
+    containerId?: string;
+    /**
+     * REQUIRED. Returns the upload_prepare response `data` from YOUR backend
+     * (which calls POST /v1/{org}/assets/upload_prepare). The write token stays
+     * on your server — never return it to the browser.
+     */
+    getUploadTarget: (file: File) => Promise<UploadTarget>;
+    /**
+     * REQUIRED. Called after the bytes land. Your backend calls
+     * POST /v1/{org}/assets/upload_complete with the target's signed_gcs_id
+     * (+ multipart_upload_id) and returns the created asset. This is the step
+     * that creates the asset in Playbook.
+     */
+    finishUpload: (target: UploadTarget, file: File) => Promise<Asset>;
+    /** "dropzone" (full drag area, default) or "button" (compact trigger). */
+    variant?: "dropzone" | "button";
+    /** Accepted types (default "image/*,video/*"): the picker's filter, enforced by the uploader on dropped files. */
+    accept?: string;
+    /** Max file size in bytes (default 104857600; a client-side cap, the API enforces real limits). */
+    maxFileSizeBytes?: number;
+    /** Max number of files per selection (0 = unlimited). */
+    maxFiles?: number;
+    /** Max uploads in flight at once (default 3, minimum 1). */
+    concurrency?: number;
+    /** Allow selecting multiple files (default true). */
+    multiple?: boolean;
+    /** Begin uploading as soon as files are selected (default true). When false, call `upload()`. */
+    autoUpload?: boolean;
+    /** Dropzone/button copy. */
+    labels?: { prompt?: string; hint?: string; button?: string };
+    onSelect?: (files: File[]) => void;
+    onProgress?: (file: File, pct: number) => void;
+    onFileComplete?: (asset: Asset, file: File) => void;
+    /** Called when the queue drains, with the assets uploaded since it last fired. */
+    onComplete?: (assets: Asset[]) => void;
+    onError?: (error: Error, file: File) => void;
+  }
+
+  export interface UploaderInstance {
+    config: UploaderConfig;
+    container: HTMLElement;
+    /** Start the files selected while `autoUpload` is false. */
+    upload(): void;
+    /** Destroy the uploader: drops queued files, aborts transfers in flight, cleans up DOM + listeners. */
+    destroy(): void;
+  }
+
+  export interface PlaybookUploaderInterface {
+    version: string;
+    instances: { [containerId: string]: UploaderInstance };
+    /** Initialize a new uploader instance (null if the config is invalid or the container is not found). */
+    init(config: UploaderConfig): UploaderInstance | null;
+    /** Destroy an uploader instance by container ID. */
+    destroy(containerId: string): void;
+    /** Get an uploader instance by container ID. */
+    getInstance(containerId: string): UploaderInstance | null;
+  }
+
+  const PlaybookUploader: PlaybookUploaderInterface;
+  export default PlaybookUploader;
+}
+
+declare module "playbook-sdk/viewer" {
+  /** A single viewable asset. */
+  export interface ViewerItem {
+    /** Full-size URL of the image or video. */
+    src: string;
+    /** MIME type; a value starting with "video" renders a <video>. */
+    type?: string;
+    /** Optional caption. */
+    title?: string;
+  }
+
+  export interface ViewerOpenOptions extends Partial<ViewerItem> {
+    /** A navigable set; takes precedence over a single src/type/title. */
+    items?: ViewerItem[];
+    /** Starting index into `items` (default 0). */
+    index?: number;
+  }
+
+  export interface PlaybookViewerInterface {
+    version: string;
+    /** Open the lightbox for one asset or a navigable set. */
+    open(options: ViewerOpenOptions): void;
+    /** Close the lightbox. */
+    close(): void;
+    /** Advance to the next item in a set. */
+    next(): void;
+    /** Go to the previous item in a set. */
+    prev(): void;
+  }
+
+  const PlaybookViewer: PlaybookViewerInterface;
+  export default PlaybookViewer;
+}
+
 /**
  * Global type declaration for browser script tag usage
  */
 declare global {
   interface Window {
     PlaybookSDK: import("playbook-sdk").PlaybookSDKInterface;
+    PlaybookUploader: import("playbook-sdk/uploader").PlaybookUploaderInterface;
+    PlaybookViewer: import("playbook-sdk/viewer").PlaybookViewerInterface;
   }
 }

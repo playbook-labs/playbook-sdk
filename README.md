@@ -2,7 +2,7 @@
 
 A lightweight frontend SDK for creating masonry grid galleries with search, board navigation, and modal views. Works for asset management, photo galleries, and media libraries.
 
-![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)
+![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Size](https://img.shields.io/badge/size-~7kB%20gzipped-orange.svg)
 
@@ -404,6 +404,14 @@ gallery.destroy();
 const instance = PlaybookSDK.getInstance("my-gallery");
 ```
 
+## Uploader
+
+A drag-and-drop uploader ships as its own bundle
+(`dist/playbook-uploader.min.js`, global `PlaybookUploader`, or
+`import PlaybookUploader from "playbook-sdk/uploader"`). It never takes a write
+token in the browser: your backend prepares and completes each upload. See
+[docs/uploader.md](docs/uploader.md).
+
 ## Styling & Customization
 
 CSS classes are prefixed with `pb-` to avoid conflicts:
@@ -450,7 +458,7 @@ For issues and questions:
 
 - [ ] Dark theme support
 - [ ] Video preview in grid
-- [ ] Drag & drop upload
+- [x] Drag & drop upload
 - [ ] Batch download
 - [ ] Grid/List view toggle
 - [ ] Advanced filtering
