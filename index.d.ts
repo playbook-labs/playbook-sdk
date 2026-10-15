@@ -347,6 +347,11 @@ declare module "playbook-sdk/uploader" {
    * Backblaze single / multipart) — none of these values is secret.
    */
   export interface UploadTarget {
+    /**
+     * The media type your backend sent to upload_prepare. The upload URL is
+     * signed for it, so the SDK sends it as Content-Type (falls back to file.type).
+     */
+    media_type?: string;
     /** "gcs" (resumable POST+PUT) or "backblaze" (single PUT / multipart parts). */
     storage_provider: "gcs" | "backblaze" | string;
     /** Signed URL: GCS resumable-init (POST) or Backblaze single-part (PUT). Null for multipart. */
@@ -377,46 +382,54 @@ declare module "playbook-sdk/uploader" {
      */
     getUploadTarget: (file: File) => Promise<UploadTarget>;
     /**
-     * Called after the bytes land. Your backend calls
+     * REQUIRED. Called after the bytes land. Your backend calls
      * POST /v1/{org}/assets/upload_complete with the target's signed_gcs_id
-     * (+ multipart_upload_id) and returns the created asset.
+     * (+ multipart_upload_id) and returns the created asset. This is the step
+     * that creates the asset in Playbook.
      */
-    finishUpload?: (target: UploadTarget, file: File) => Promise<Asset>;
+    finishUpload: (target: UploadTarget, file: File) => Promise<Asset>;
     /** "dropzone" (full drag area, default) or "button" (compact trigger). */
     variant?: "dropzone" | "button";
-    /** Accepted MIME types for the file input (default "image/*,video/*"). */
+    /** Accepted types (default "image/*,video/*"): the picker's filter, enforced by the uploader on dropped files. */
     accept?: string;
-    /** Max file size in bytes (default 104857600 — the create_upload_url ceiling). */
+    /** Max file size in bytes (default 104857600; a client-side cap, the API enforces real limits). */
     maxFileSizeBytes?: number;
     /** Max number of files per selection (0 = unlimited). */
     maxFiles?: number;
+    /** Max uploads in flight at once (default 3, minimum 1). */
+    concurrency?: number;
     /** Allow selecting multiple files (default true). */
     multiple?: boolean;
-    /** Begin uploading as soon as files are selected (default true). */
+    /** Begin uploading as soon as files are selected (default true). When false, call `upload()`. */
     autoUpload?: boolean;
     /** Dropzone/button copy. */
     labels?: { prompt?: string; hint?: string; button?: string };
     onSelect?: (files: File[]) => void;
     onProgress?: (file: File, pct: number) => void;
-    onFileComplete?: (asset: Asset | null, file: File) => void;
-    onComplete?: (assets: Array<Asset | null>) => void;
+    onFileComplete?: (asset: Asset, file: File) => void;
+    /** Called when the queue drains, with the assets uploaded since it last fired. */
+    onComplete?: (assets: Asset[]) => void;
     onError?: (error: Error, file: File) => void;
   }
 
   export interface UploaderInstance {
     config: UploaderConfig;
     container: HTMLElement;
-    /** Destroy the uploader instance and clean up DOM + listeners. */
+    /** Start the files selected while `autoUpload` is false. */
+    upload(): void;
+    /** Destroy the uploader: drops queued files, aborts transfers in flight, cleans up DOM + listeners. */
     destroy(): void;
   }
 
   export interface PlaybookUploaderInterface {
     version: string;
     instances: { [containerId: string]: UploaderInstance };
-    /** Initialize a new uploader instance (null if container not found). */
+    /** Initialize a new uploader instance (null if the config is invalid or the container is not found). */
     init(config: UploaderConfig): UploaderInstance | null;
     /** Destroy an uploader instance by container ID. */
     destroy(containerId: string): void;
+    /** Get an uploader instance by container ID. */
+    getInstance(containerId: string): UploaderInstance | null;
   }
 
   const PlaybookUploader: PlaybookUploaderInterface;

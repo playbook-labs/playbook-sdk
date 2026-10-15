@@ -404,6 +404,14 @@ gallery.destroy();
 const instance = PlaybookSDK.getInstance("my-gallery");
 ```
 
+## Uploader
+
+A drag-and-drop uploader ships as its own bundle
+(`dist/playbook-uploader.min.js`, global `PlaybookUploader`, or
+`import PlaybookUploader from "playbook-sdk/uploader"`). It never takes a write
+token in the browser: your backend prepares and completes each upload. See
+[docs/uploader.md](docs/uploader.md).
+
 ## Styling & Customization
 
 CSS classes are prefixed with `pb-` to avoid conflicts:
@@ -456,7 +464,7 @@ For issues and questions:
 
 - [ ] Dark theme support
 - [ ] Video preview in grid
-- [ ] Drag & drop upload
+- [x] Drag & drop upload
 - [ ] Batch download
 - [ ] Grid/List view toggle
 - [ ] Advanced filtering

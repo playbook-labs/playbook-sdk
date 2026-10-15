@@ -13,6 +13,7 @@ const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url))
 test("exposes the expected public surface", () => {
   assert.equal(typeof Uploader.init, "function");
   assert.equal(typeof Uploader.destroy, "function");
+  assert.equal(typeof Uploader.getInstance, "function");
   assert.equal(typeof Uploader.instances, "object");
 });
 
@@ -29,4 +30,15 @@ test("init() returns null when getUploadTarget is not a function", () => {
     Uploader.init({ containerId: "x", getUploadTarget: "nope" }),
     null
   );
+});
+
+test("init() returns null when finishUpload is missing", () => {
+  assert.equal(
+    Uploader.init({ containerId: "x", getUploadTarget: async () => ({}) }),
+    null
+  );
+});
+
+test("getInstance() returns null for an unknown container", () => {
+  assert.equal(Uploader.getInstance("nope"), null);
 });

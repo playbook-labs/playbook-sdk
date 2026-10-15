@@ -8,6 +8,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Uploader (`dist/playbook-uploader.min.js`, global `PlaybookUploader`, import
+  `playbook-sdk/uploader`): a drag-and-drop or button uploader. It takes no
+  write token; `getUploadTarget` and `finishUpload` call your backend, which
+  calls `assets/upload_prepare` and `assets/upload_complete`. The browser sends
+  the bytes straight to storage (GCS resumable, or Backblaze single PUT or
+  multipart). See `docs/uploader.md`.
+- `examples/backend/upload-target.mjs`, a dependency-free reference backend for
+  the uploader.
+- Viewer (`dist/playbook-viewer.min.js`, global `PlaybookViewer`, import
+  `playbook-sdk/viewer`): a standalone lightbox for images and video.
 - Four components, each its own bundle: a media picker (`PlaybookPicker`), an
   inline video player (`PlaybookPlayer`), a single asset embed
   (`PlaybookEmbed`) and a headless search box (`PlaybookSearch`). See

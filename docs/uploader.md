@@ -23,9 +23,11 @@ The transfer step is **provider-aware** — `upload_prepare` reports a
 `storage_provider`, and the SDK does whichever it calls for: **GCS** (initiate a
 resumable session with a POST, then PUT to it) or **Backblaze** (a single PUT, or
 one PUT per presigned part for files ≥ 5 MB). You don't handle any of that; you
-just supply the two backend callbacks. See
-[`examples/backend/upload-target.js`](../examples/backend/upload-target.js) for a
-runnable reference backend, and
+just supply the two backend callbacks. The API reports `gcs` for every workspace
+today, so the Backblaze paths follow the API contract but have not yet run
+against real storage. See
+[`examples/backend/upload-target.mjs`](../examples/backend/upload-target.mjs) for a
+runnable, dependency-free reference backend, and
 [`examples/uploader-example.html`](../examples/uploader-example.html) for the
 client wiring.
 
@@ -49,16 +51,19 @@ client wiring.
           mediaType: file.type,
         }),
       });
+      if (!res.ok) throw new Error("could not prepare upload");
       return res.json(); // upload_prepare data (storage_provider, upload_url, …)
     },
 
-    // After the transfer, your backend calls assets/upload_complete.
+    // After the transfer, your backend calls assets/upload_complete. This is
+    // the step that creates the asset, so throw if it fails.
     finishUpload: async (target) => {
       const res = await fetch("/playbook/finish-upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ target }),
       });
+      if (!res.ok) throw new Error("could not finish upload");
       return res.json(); // the created asset
     },
 
@@ -73,28 +78,43 @@ client wiring.
 | --- | --- | --- | --- |
 | `containerId` | `string` | `"__playbook-uploader"` | Element the uploader renders into. |
 | `getUploadTarget` | `(file) => Promise<UploadTarget>` | — | **Required.** `upload_prepare` data from your backend. |
-| `finishUpload` | `(target, file) => Promise<Asset>` | — | Register the asset after the transfer. |
-| `accept` | `string` | `"image/*,video/*"` | File input filter. |
+| `finishUpload` | `(target, file) => Promise<Asset>` | — | **Required.** Registers the asset after the transfer; without it nothing is created in Playbook. |
+| `variant` | `"dropzone" \| "button"` | `"dropzone"` | Full drag area, or a compact button. |
+| `accept` | `string` | `"image/*,video/*"` | File filter. The browser applies it in the file picker (where "All files" can bypass it); the uploader enforces it on dropped files. Validate the type on your backend too. |
 | `maxFileSizeBytes` | `number` | `104857600` | Client-side cap (UX only); the API enforces real limits. |
 | `maxFiles` | `number` | `0` | Per-selection cap; `0` = unlimited. |
-| `concurrency` | `number` | `3` | Max uploads in flight at once. |
+| `concurrency` | `number` | `3` | Max uploads in flight at once (minimum 1). |
 | `multiple` | `boolean` | `true` | Allow multi-select. |
-| `autoUpload` | `boolean` | `true` | Upload on select vs. wait. |
-| `labels` | `{ prompt, hint }` | — | Dropzone copy. |
+| `autoUpload` | `boolean` | `true` | Upload on select; when `false`, call `instance.upload()` to start. |
+| `labels` | `{ prompt, hint, button }` | — | Dropzone and button copy. |
 
 ### Events
 
 `onSelect(files)`, `onProgress(file, pct)`, `onFileComplete(asset, file)`,
 `onComplete(assets)`, `onError(error, file)`.
 
+`onComplete` fires when the queue drains, with the assets uploaded since it last
+fired (not every asset since `init`). Selections that overlap in time are
+reported together.
+
+### Instance methods
+
+`PlaybookUploader.init()` returns the instance (also available later through
+`PlaybookUploader.getInstance("uploader")`):
+
+- `upload()` starts the files selected while `autoUpload` is `false`.
+- `destroy()` removes the uploader; see [Teardown](#teardown).
+
 ## `UploadTarget` shape
 
 What `getUploadTarget` resolves to — the `data` from Playbook's
-`assets/upload_prepare`, returned by your backend verbatim. The SDK reads it to
-perform the transfer; none of it is secret (signed URLs + opaque metadata):
+`assets/upload_prepare`, returned by your backend, plus the `media_type` it
+sent. The SDK reads it to perform the transfer; none of it is secret (signed
+URLs + opaque metadata):
 
 ```ts
 {
+  media_type?: string;                     // the type you sent to upload_prepare
   storage_provider: "gcs" | "backblaze";
   upload_url?: string | null;              // GCS resumable-init POST, or B2 single PUT
   signed_gcs_id: string;                   // passed back to upload_complete
@@ -105,6 +125,12 @@ perform the transfer; none of it is secret (signed URLs + opaque metadata):
   parts?: { part_number: number; url: string }[] | null;
 }
 ```
+
+The upload URL is signed for the media type your backend passed to
+`upload_prepare`, and the SDK must send that exact value as `Content-Type`.
+Return it as `media_type` (the reference backend does). Without it the SDK falls
+back to the browser's `file.type`, which fails the signature check whenever the
+two differ or the browser reports no type.
 
 The SDK hands this whole object back to `finishUpload`; your backend completes
 with its `signed_gcs_id` (+ `multipart_upload_id`). Those ids are verified by the
@@ -155,4 +181,4 @@ A full page wiring both widgets to one backend is in
 ## Teardown
 
 `PlaybookUploader.destroy("uploader")` removes the instance, its DOM, and its
-listeners.
+listeners. Queued files are dropped and transfers in flight are aborted.
