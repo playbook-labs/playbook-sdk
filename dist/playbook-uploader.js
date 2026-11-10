@@ -1,11 +1,14 @@
-/*! Playbook Uploader SDK v1.2.0 | MIT License | https://github.com/playbook-labs/playbook-sdk */
+/*! Playbook Uploader SDK v1.3.0 | MIT License | https://github.com/playbook-labs/playbook-sdk */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = global || self, global.PlaybookUploader = factory());
 })(this, function() {
   "use strict";
   const STYLE_ID = "__playbook-uploader-styles";
+  const GCS_CHUNK_SIZE = 16 * 1024 * 1024;
+  const GCS_MAX_RETRIES = 4;
+  const GCS_CHUNK_TIMEOUT_MS = 5 * 60 * 1e3;
   const PlaybookUploader = {
-    version: "1.2.0",
+    version: "1.3.0",
     instances: {},
     init: function(config) {
       const defaultConfig = {
@@ -24,8 +27,8 @@
         variant: "dropzone",
         // "dropzone" (full drag area) | "button" (compact)
         accept: "image/*,video/*",
-        maxFileSizeBytes: 104857600,
-        // 100 MB client-side cap; the API enforces real limits
+        maxFileSizeBytes: 2147483648,
+        // 2 GB client-side cap; the API enforces real limits
         maxFiles: 0,
         // 0 = unlimited
         concurrency: 3,
@@ -343,7 +346,7 @@
     }
     // Transfer the bytes to storage. The shape of this step depends on the
     // provider reported by upload_prepare:
-    //   gcs        → initiate a resumable session (POST), then PUT to it
+    //   gcs        → initiate a resumable session (POST), then PUT it in chunks
     //   backblaze  → single PUT (<5MB) or one PUT per presigned part (>=5MB)
     // The API reports "gcs" for every workspace today, so the backblaze paths
     // follow the API contract but have not run against real storage.
@@ -356,7 +359,7 @@
           throw new Error("upload_prepare missing encrypted_organization_metadata");
         }
         const sessionUrl = await this._gcsInitiate(target, contentType);
-        await this._putXhr(sessionUrl, file, { "Content-Type": contentType }, onPct);
+        await this._gcsTransferChunks(sessionUrl, file, onPct);
       } else if (target.multipart_upload_id && target.parts && target.parts.length) {
         if (!(target.part_size > 0)) {
           throw new Error("multipart upload_prepare returned no part_size");
@@ -416,6 +419,82 @@
         xhr.onerror = () => reject(new Error("GCS init network error"));
         xhr.send(null);
       });
+    }
+    // GCS resumable: PUT the file to the session in GCS_CHUNK_SIZE chunks. A
+    // non-final chunk answers 308 with `Range: bytes=0-<last>`, and the next
+    // chunk starts at <last> + 1, since GCS may keep less than was sent. After
+    // a retryable failure, a body-less status query asks where to resume.
+    async _gcsTransferChunks(sessionUrl, file, onPct) {
+      const total = file.size;
+      let offset = 0;
+      let failures = 0;
+      let query = false;
+      for (; ; ) {
+        try {
+          let xhr;
+          if (query) {
+            xhr = await this._gcsPut(sessionUrl, null, `bytes */${total}`);
+          } else {
+            const end = Math.min(offset + GCS_CHUNK_SIZE, total);
+            const range = total === 0 ? "bytes */0" : `bytes ${offset}-${end - 1}/${end === total ? total : "*"}`;
+            xhr = await this._gcsPut(
+              sessionUrl,
+              file.slice(offset, end),
+              range,
+              (loaded) => onPct(total ? Math.round((offset + loaded) / total * 100) : 100)
+            );
+          }
+          if (xhr.status !== 308) return;
+          const kept = /-(\d+)$/.exec(xhr.getResponseHeader("Range") || "");
+          const next = kept ? Number(kept[1]) + 1 : 0;
+          if (!query && next <= offset) {
+            throw Object.assign(new Error("Storage kept none of the chunk"), {
+              retryable: true
+            });
+          }
+          if (next > offset) failures = 0;
+          offset = next;
+          query = false;
+        } catch (err) {
+          if (!err.retryable || failures >= GCS_MAX_RETRIES) throw err;
+          failures += 1;
+          await this._backoff(failures);
+          if (this.destroyed) throw new Error("Upload aborted");
+          query = true;
+        }
+      }
+    }
+    // One PUT to a GCS session. Resolves with the XHR on 200/201/308; rejects
+    // with `retryable` set on a network error, a timeout, 408, 429 or a 5xx.
+    _gcsPut(sessionUrl, body, contentRange, onLoaded) {
+      return new Promise((resolve, reject) => {
+        if (!this._isHttps(sessionUrl)) {
+          return reject(new Error("Upload URL must be https"));
+        }
+        const retry = (message) => reject(Object.assign(new Error(message), { retryable: true }));
+        const xhr = new XMLHttpRequest();
+        this._track(xhr, reject);
+        xhr.open("PUT", sessionUrl);
+        xhr.timeout = GCS_CHUNK_TIMEOUT_MS;
+        xhr.setRequestHeader("Content-Range", contentRange);
+        if (body) xhr.setRequestHeader("Content-Type", "text/plain");
+        if (contentRange.endsWith("/*")) xhr.setRequestHeader("x-pb-await-completion", "false");
+        if (onLoaded) xhr.upload.onprogress = (e) => onLoaded(e.loaded);
+        xhr.onload = () => {
+          const status = xhr.status;
+          if (status === 200 || status === 201 || status === 308) resolve(xhr);
+          else if (status === 408 || status === 429 || status >= 500) {
+            retry(`Upload failed (HTTP ${status})`);
+          } else reject(new Error(`Upload failed (HTTP ${status})`));
+        };
+        xhr.onerror = () => retry("Upload network error");
+        xhr.ontimeout = () => retry("Upload timed out");
+        xhr.send(body);
+      });
+    }
+    // Wait 1s, 2s, 4s, … before retry `attempt`.
+    _backoff(attempt) {
+      return new Promise((resolve) => setTimeout(resolve, 1e3 * 2 ** (attempt - 1)));
     }
     // Backblaze multipart: PUT each presigned part in order, aggregating
     // progress across the whole file.

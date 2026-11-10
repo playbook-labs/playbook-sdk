@@ -21,9 +21,12 @@ finishUpload(target)   ──►  assets/upload_complete ──►   asset
 
 The transfer step is **provider-aware** — `upload_prepare` reports a
 `storage_provider`, and the SDK does whichever it calls for: **GCS** (initiate a
-resumable session with a POST, then PUT to it) or **Backblaze** (a single PUT, or
-one PUT per presigned part for files ≥ 5 MB). You don't handle any of that; you
-just supply the two backend callbacks. The API reports `gcs` for every workspace
+resumable session with a POST, then PUT the file to it in 16 MiB chunks) or
+**Backblaze** (a single PUT, or one PUT per presigned part for files ≥ 5 MB).
+A GCS chunk that fails with a network error, a timeout or a 5xx is retried with
+backoff: the SDK asks the session how much it already holds and resumes from
+there, so a dropped connection doesn't restart a large file. You don't handle
+any of that; you just supply the two backend callbacks. The API reports `gcs` for every workspace
 today, so the Backblaze paths follow the API contract but have not yet run
 against real storage. See
 [`examples/backend/upload-target.mjs`](../examples/backend/upload-target.mjs) for a
@@ -81,7 +84,7 @@ client wiring.
 | `finishUpload` | `(target, file) => Promise<Asset>` | — | **Required.** Registers the asset after the transfer; without it nothing is created in Playbook. |
 | `variant` | `"dropzone" \| "button"` | `"dropzone"` | Full drag area, or a compact button. |
 | `accept` | `string` | `"image/*,video/*"` | File filter. The browser applies it in the file picker (where "All files" can bypass it); the uploader enforces it on dropped files. Validate the type on your backend too. |
-| `maxFileSizeBytes` | `number` | `104857600` | Client-side cap (UX only); the API enforces real limits. |
+| `maxFileSizeBytes` | `number` | `2147483648` (2 GB) | Client-side cap (UX only); the API enforces real limits. |
 | `maxFiles` | `number` | `0` | Per-selection cap; `0` = unlimited. |
 | `concurrency` | `number` | `3` | Max uploads in flight at once (minimum 1). |
 | `multiple` | `boolean` | `true` | Allow multi-select. |
