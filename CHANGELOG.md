@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0]
+
+### Changed
+
+- Uploader: GCS transfers now send the file in 16 MiB chunks to the resumable
+  session instead of one PUT, so files larger than ~100 MB get through the
+  upload proxy. A chunk that fails with a network error, a timeout or a 5xx is
+  retried with backoff, resuming from what storage already holds. Progress
+  covers the whole file across chunks.
+- Uploader: the default `maxFileSizeBytes` is now 2 GB (2147483648), up from
+  100 MB.
+
 ## [1.2.0]
 
 ### Added
@@ -82,6 +94,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Initial release: responsive masonry gallery, search, board navigation,
   modal viewer, download support, and TypeScript definitions.
 
+[1.3.0]: https://github.com/playbook-labs/playbook-sdk/releases/tag/v1.3.0
 [1.2.0]: https://github.com/playbook-labs/playbook-sdk/releases/tag/v1.2.0
 [1.1.0]: https://github.com/playbook-labs/playbook-sdk/releases/tag/v1.1.0
 [1.0.4]: https://github.com/playbook-labs/playbook-sdk/releases/tag/v1.0.4

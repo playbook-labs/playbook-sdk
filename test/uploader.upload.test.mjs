@@ -38,12 +38,14 @@ console.error = () => {};
 
 // Records every request. Each one answers on the next tick with `status` (and
 // `location` as its Location header) unless `hold` is set, which leaves it in
-// flight.
+// flight. `respond(xhr)`, when set, decides the answer instead: { status,
+// range } or "error" for a network error.
 class FakeXHR {
   static sent = [];
   static hold = false;
   static status = 200;
   static location = "https://storage.test/session";
+  static respond = null;
   upload = {};
   headers = {};
   open(method, url) {
@@ -54,16 +56,25 @@ class FakeXHR {
     this.headers[name] = value;
   }
   getResponseHeader(name) {
-    return name === "Location" ? FakeXHR.location : null;
+    if (name === "Location") return FakeXHR.location;
+    if (name === "Range") return this.range || null;
+    return null;
   }
   send(body) {
     this.body = body;
     FakeXHR.sent.push(this);
     if (FakeXHR.hold) return;
     setTimeout(() => {
+      const reply = FakeXHR.respond ? FakeXHR.respond(this) : { status: FakeXHR.status };
+      if (reply === "error") {
+        this.onerror?.();
+        this.onloadend?.();
+        return;
+      }
       const size = body ? body.size : 0;
       this.upload.onprogress?.({ lengthComputable: true, loaded: size, total: size });
-      this.status = FakeXHR.status;
+      this.status = reply.status;
+      this.range = reply.range;
       this.onload?.();
       this.onloadend?.();
     }, 0);
@@ -98,6 +109,7 @@ function start(config = {}) {
   FakeXHR.hold = false;
   FakeXHR.status = 200;
   FakeXHR.location = "https://storage.test/session";
+  FakeXHR.respond = null;
   const seen = { prepared: [], finished: [], completed: [], errors: [], progress: [] };
   const uploader = Uploader.init({
     containerId: "uploader",
@@ -149,10 +161,228 @@ test("sends the media type the target was signed for, not the browser's file.typ
   pick(uploader, [file("IMG_0001.heic", { type: "" })]);
   await settle();
 
+  // The session itself expects text/plain chunks.
   assert.deepEqual(
     FakeXHR.sent.map((xhr) => xhr.headers["Content-Type"]),
-    ["image/heic", "image/heic"]
+    ["image/heic", "text/plain"]
   );
+  uploader.destroy();
+});
+
+const MiB = 1024 * 1024;
+const CHUNK = 16 * MiB;
+
+// A fake GCS resumable session. A chunk PUT persists `keep(start, end)` bytes
+// in total (default: all of it); a status query reports what is held.
+// `fail(xhr)` returns a status or "error" to fail a request before it lands.
+function gcsSession({ keep, fail, finalStatus = 200 } = {}) {
+  let held = 0;
+  return (xhr) => {
+    if (xhr.method === "POST") return { status: 201 };
+    const failure = fail?.(xhr);
+    if (failure) return failure === "error" ? "error" : { status: failure };
+    const [, start, end, total] = /^bytes (?:(\d+)-(\d+)|\*)\/(\d+|\*)$/.exec(
+      xhr.headers["Content-Range"]
+    );
+    if (start !== undefined) {
+      held = keep ? keep(Number(start), Number(end)) : Number(end) + 1;
+    }
+    if (total !== "*" && held === Number(total)) return { status: finalStatus };
+    return { status: 308, range: held ? `bytes=0-${held - 1}` : null };
+  };
+}
+
+const puts = () =>
+  FakeXHR.sent.filter((xhr) => xhr.method === "PUT").map((xhr) => xhr.headers["Content-Range"]);
+
+// Starts an uploader against a fake GCS session, with retries that do not wait.
+function startGcs(session, config) {
+  const run = start(config);
+  run.uploader._backoff = async () => {};
+  FakeXHR.respond = session;
+  return run;
+}
+
+test("gcs: a file that is not a multiple of the chunk size ends with a short chunk carrying the total", async () => {
+  const { uploader, seen } = startGcs(gcsSession());
+  const size = 2 * CHUNK + 5 * MiB;
+
+  drop(uploader, [file("clip.mp4", { size, type: "video/mp4" })]);
+  await settle();
+
+  assert.deepEqual(puts(), [
+    `bytes 0-${CHUNK - 1}/*`,
+    `bytes ${CHUNK}-${2 * CHUNK - 1}/*`,
+    `bytes ${2 * CHUNK}-${size - 1}/${size}`,
+  ]);
+  const chunks = FakeXHR.sent.slice(1);
+  assert.deepEqual(chunks.map((xhr) => xhr.body.size), [CHUNK, CHUNK, 5 * MiB]);
+  assert.ok(chunks.every((xhr) => xhr.headers["Content-Type"] === "text/plain"));
+  // The last chunk waits for the stored object, so upload_complete finds it.
+  assert.deepEqual(
+    chunks.map((xhr) => xhr.headers["x-pb-await-completion"]),
+    ["false", "false", undefined]
+  );
+  assert.deepEqual(seen.completed, [["clip.mp4"]]);
+  uploader.destroy();
+});
+
+test("gcs: a file smaller than one chunk is a single PUT with the total", async () => {
+  const { uploader, seen } = startGcs(gcsSession());
+
+  drop(uploader, [file("a.png", { size: 10 })]);
+  await settle();
+
+  assert.deepEqual(puts(), ["bytes 0-9/10"]);
+  assert.deepEqual(seen.completed, [["a.png"]]);
+  uploader.destroy();
+});
+
+test("gcs: an exact multiple of the chunk size sends no empty trailing chunk", async () => {
+  const { uploader, seen } = startGcs(gcsSession());
+  const size = 2 * CHUNK;
+
+  drop(uploader, [file("clip.mp4", { size, type: "video/mp4" })]);
+  await settle();
+
+  assert.deepEqual(puts(), [`bytes 0-${CHUNK - 1}/*`, `bytes ${CHUNK}-${size - 1}/${size}`]);
+  assert.deepEqual(seen.completed, [["clip.mp4"]]);
+  uploader.destroy();
+});
+
+test("gcs: an empty file is one PUT of bytes */0", async () => {
+  const { uploader, seen } = startGcs(gcsSession());
+
+  drop(uploader, [file("empty.png", { size: 0 })]);
+  await settle();
+
+  assert.deepEqual(puts(), ["bytes */0"]);
+  assert.deepEqual(seen.completed, [["empty.png"]]);
+  uploader.destroy();
+});
+
+test("gcs: continues from the 308 Range when storage keeps less than was sent", async () => {
+  const size = CHUNK + 4 * MiB;
+  const { uploader, seen } = startGcs(
+    gcsSession({ keep: (start, end) => (start === 0 ? 4 * MiB : end + 1) })
+  );
+
+  drop(uploader, [file("clip.mp4", { size, type: "video/mp4" })]);
+  await settle();
+
+  assert.deepEqual(puts(), [`bytes 0-${CHUNK - 1}/*`, `bytes ${4 * MiB}-${size - 1}/${size}`]);
+  assert.deepEqual(seen.completed, [["clip.mp4"]]);
+  uploader.destroy();
+});
+
+test("gcs: after a failed chunk, a status query says where to resume", async () => {
+  const size = CHUNK + 1 * MiB;
+  const attempts = {};
+  const { uploader, seen } = startGcs(
+    gcsSession({
+      // First chunk: 503 once. Second chunk: a network error once.
+      fail: (xhr) => {
+        const range = xhr.headers["Content-Range"];
+        if (range.startsWith("bytes */")) return null;
+        attempts[range] = (attempts[range] || 0) + 1;
+        if (attempts[range] > 1) return null;
+        return range.startsWith("bytes 0-") ? 503 : "error";
+      },
+    })
+  );
+
+  drop(uploader, [file("clip.mp4", { size, type: "video/mp4" })]);
+  await settle();
+
+  assert.deepEqual(puts(), [
+    `bytes 0-${CHUNK - 1}/*`,
+    `bytes */${size}`, // 308 without Range: nothing held, restart at 0
+    `bytes 0-${CHUNK - 1}/*`,
+    `bytes ${CHUNK}-${size - 1}/${size}`,
+    `bytes */${size}`, // 308 with Range: the first chunk is held
+    `bytes ${CHUNK}-${size - 1}/${size}`,
+  ]);
+  const query = FakeXHR.sent[2];
+  assert.equal(query.body, null);
+  assert.equal(query.headers["Content-Type"], undefined);
+  assert.deepEqual(seen.errors, []);
+  assert.deepEqual(seen.completed, [["clip.mp4"]]);
+  uploader.destroy();
+});
+
+test("gcs: a status query answering 201 means the upload already completed", async () => {
+  const size = 10;
+  const { uploader, seen } = startGcs((xhr) => {
+    if (xhr.method === "POST") return { status: 201 };
+    // The final chunk lands but its response is lost.
+    return xhr.headers["Content-Range"] === `bytes */${size}` ? { status: 201 } : "error";
+  });
+
+  drop(uploader, [file("a.png", { size })]);
+  await settle();
+
+  assert.deepEqual(puts(), [`bytes 0-9/${size}`, `bytes */${size}`]);
+  assert.deepEqual(seen.completed, [["a.png"]]);
+  uploader.destroy();
+});
+
+test("gcs: the final chunk may answer 201", async () => {
+  const { uploader, seen } = startGcs(gcsSession({ finalStatus: 201 }));
+
+  drop(uploader, [file("a.png", { size: CHUNK + 1 })]);
+  await settle();
+
+  assert.deepEqual(puts(), [`bytes 0-${CHUNK - 1}/*`, `bytes ${CHUNK}-${CHUNK}/${CHUNK + 1}`]);
+  assert.deepEqual(seen.completed, [["a.png"]]);
+  uploader.destroy();
+});
+
+test("gcs: gives up after the retries and never calls finishUpload", async () => {
+  const { uploader, seen } = startGcs(gcsSession({ fail: () => 503 }));
+
+  drop(uploader, [file("a.png", { size: 10 })]);
+  await settle();
+
+  assert.deepEqual(puts(), ["bytes 0-9/10", ...Array(8).fill("bytes */10")]);
+  assert.deepEqual(seen.errors, ["a.png"]);
+  assert.deepEqual(seen.finished, []);
+  uploader.destroy();
+});
+
+test("gcs: a 4xx on a chunk fails the file without retrying", async () => {
+  const { uploader, seen } = startGcs(gcsSession({ fail: () => 404 }));
+
+  drop(uploader, [file("a.png", { size: 10 })]);
+  await settle();
+
+  assert.deepEqual(puts(), ["bytes 0-9/10"]);
+  assert.deepEqual(seen.errors, ["a.png"]);
+  assert.deepEqual(seen.finished, []);
+  uploader.destroy();
+});
+
+test("gcs: a 308 that never advances fails the file instead of looping", async () => {
+  // No Range is ever exposed, so every chunk looks unpersisted.
+  const { uploader, seen } = startGcs((xhr) =>
+    xhr.method === "POST" ? { status: 201 } : { status: 308 }
+  );
+
+  drop(uploader, [file("a.png", { size: CHUNK + 1 })]);
+  await settle();
+
+  assert.equal(puts().length, 17); // the chunk, then 8 × (query + chunk)
+  assert.deepEqual(seen.errors, ["a.png"]);
+  assert.deepEqual(seen.finished, []);
+  uploader.destroy();
+});
+
+test("gcs: progress covers the whole file across chunks", async () => {
+  const { uploader, seen } = startGcs(gcsSession());
+
+  drop(uploader, [file("clip.mp4", { size: 4 * CHUNK, type: "video/mp4" })]);
+  await settle();
+
+  assert.deepEqual(seen.progress, [25, 50, 75, 100].map((pct) => `clip.mp4 ${pct}`));
   uploader.destroy();
 });
 

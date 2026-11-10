@@ -1,4 +1,4 @@
-/*! Playbook Embed SDK v1.2.0 | MIT License | https://github.com/playbook-labs/playbook-sdk */
+/*! Playbook Embed SDK v1.3.0 | MIT License | https://github.com/playbook-labs/playbook-sdk */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = global || self, global.PlaybookEmbed = factory());
 })(this, function() {
@@ -47,7 +47,7 @@
   const PROCESSING_MESSAGE = "This video is still processing. Try again in a few minutes.";
   const canPlayHls = () => document.createElement("video").canPlayType("application/vnd.apple.mpegurl") !== "";
   const PlaybookEmbed = {
-    version: "1.2.0",
+    version: "1.3.0",
     instances: {},
     init: function(config) {
       const defaultConfig = {

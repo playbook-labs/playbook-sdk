@@ -352,7 +352,7 @@ declare module "playbook-sdk/uploader" {
      * signed for it, so the SDK sends it as Content-Type (falls back to file.type).
      */
     media_type?: string;
-    /** "gcs" (resumable POST+PUT) or "backblaze" (single PUT / multipart parts). */
+    /** "gcs" (resumable POST, then chunked PUTs) or "backblaze" (single PUT / multipart parts). */
     storage_provider: "gcs" | "backblaze" | string;
     /** Signed URL: GCS resumable-init (POST) or Backblaze single-part (PUT). Null for multipart. */
     upload_url?: string | null;
@@ -392,7 +392,7 @@ declare module "playbook-sdk/uploader" {
     variant?: "dropzone" | "button";
     /** Accepted types (default "image/*,video/*"): the picker's filter, enforced by the uploader on dropped files. */
     accept?: string;
-    /** Max file size in bytes (default 104857600; a client-side cap, the API enforces real limits). */
+    /** Max file size in bytes (default 2147483648, 2 GB; a client-side cap, the API enforces real limits). */
     maxFileSizeBytes?: number;
     /** Max number of files per selection (0 = unlimited). */
     maxFiles?: number;
