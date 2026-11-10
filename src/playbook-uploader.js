@@ -34,7 +34,10 @@
   // GCS requires every chunk but the last to be a multiple of 256 KiB, and the
   // upload proxy rejects single requests above ~100 MB.
   const GCS_CHUNK_SIZE = 16 * 1024 * 1024;
-  const GCS_MAX_RETRIES = 4;
+  // Waits of 1, 2, 4, 8, 16, then 30 s: about two minutes without progress,
+  // so a phone that drops off Wi-Fi mid-upload resumes instead of starting over.
+  const GCS_MAX_RETRIES = 8;
+  const GCS_MAX_BACKOFF_MS = 30 * 1000;
   const GCS_CHUNK_TIMEOUT_MS = 5 * 60 * 1000;
 
   const PlaybookUploader = {
@@ -592,7 +595,9 @@
 
     // Wait 1s, 2s, 4s, … before retry `attempt`.
     _backoff(attempt) {
-      return new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** (attempt - 1)));
+      return new Promise((resolve) =>
+        setTimeout(resolve, Math.min(1000 * 2 ** (attempt - 1), GCS_MAX_BACKOFF_MS))
+      );
     }
 
     // Backblaze multipart: PUT each presigned part in order, aggregating

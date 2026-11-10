@@ -5,7 +5,8 @@
   "use strict";
   const STYLE_ID = "__playbook-uploader-styles";
   const GCS_CHUNK_SIZE = 16 * 1024 * 1024;
-  const GCS_MAX_RETRIES = 4;
+  const GCS_MAX_RETRIES = 8;
+  const GCS_MAX_BACKOFF_MS = 30 * 1e3;
   const GCS_CHUNK_TIMEOUT_MS = 5 * 60 * 1e3;
   const PlaybookUploader = {
     version: "1.3.0",
@@ -494,7 +495,9 @@
     }
     // Wait 1s, 2s, 4s, … before retry `attempt`.
     _backoff(attempt) {
-      return new Promise((resolve) => setTimeout(resolve, 1e3 * 2 ** (attempt - 1)));
+      return new Promise(
+        (resolve) => setTimeout(resolve, Math.min(1e3 * 2 ** (attempt - 1), GCS_MAX_BACKOFF_MS))
+      );
     }
     // Backblaze multipart: PUT each presigned part in order, aggregating
     // progress across the whole file.

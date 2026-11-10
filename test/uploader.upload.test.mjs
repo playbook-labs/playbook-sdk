@@ -343,7 +343,7 @@ test("gcs: gives up after the retries and never calls finishUpload", async () =>
   drop(uploader, [file("a.png", { size: 10 })]);
   await settle();
 
-  assert.deepEqual(puts(), ["bytes 0-9/10", ...Array(4).fill("bytes */10")]);
+  assert.deepEqual(puts(), ["bytes 0-9/10", ...Array(8).fill("bytes */10")]);
   assert.deepEqual(seen.errors, ["a.png"]);
   assert.deepEqual(seen.finished, []);
   uploader.destroy();
@@ -370,7 +370,7 @@ test("gcs: a 308 that never advances fails the file instead of looping", async (
   drop(uploader, [file("a.png", { size: CHUNK + 1 })]);
   await settle();
 
-  assert.equal(puts().length, 9); // the chunk, then 4 × (query + chunk)
+  assert.equal(puts().length, 17); // the chunk, then 8 × (query + chunk)
   assert.deepEqual(seen.errors, ["a.png"]);
   assert.deepEqual(seen.finished, []);
   uploader.destroy();
